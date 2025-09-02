@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap');
+body {
+  font-family: 'Poppins', sans-serif;
+}
+.hero-image {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 80vh;
+  object-fit: cover;
+  z-index: -1;
+}
+
+.btn-send-message {
+  border-radius: 50%;
+  line-height: 2em;
+  position: absolute;
+  right: 0;
+  top: 73%;
+  transform: translateY(-25%);
+  width: 35px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.card {
+  width: 200px;
+  height: 330px;
+}
+
+.card-img-top {
+  height: 150px;
+}
+
+.card-placeholder {
+  text-align: center;
+  vertical-align: middle;
+  height: 150px;
+  width: 100%;
+}
+
+.card-placeholder img {
+  height: 60%;
+  width: 70%;
+  transform: translateY(30%);
+}
+
+.card-footer {
+  color: green;
+  text-align: end;
+}
