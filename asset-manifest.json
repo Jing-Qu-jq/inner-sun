@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.css": "/inner-sun/static/css/main.5972fc86.css",
+    "main.js": "/inner-sun/static/js/main.e7e6f048.js",
+    "static/media/hero_image.png": "/inner-sun/static/media/hero_image.25255e2eace167794355.png",
+    "static/media/logo.png": "/inner-sun/static/media/logo.3d3afc2c64103ddb1af9.png",
+    "static/media/profile_image.png": "/inner-sun/static/media/profile_image.5f7d17872c832a6b7147.png",
+    "index.html": "/inner-sun/index.html",
+    "static/media/paper_airplane.svg": "/inner-sun/static/media/paper_airplane.251fe1318f91f4817e4c40f963618feb.svg",
+    "main.5972fc86.css.map": "/inner-sun/static/css/main.5972fc86.css.map",
+    "main.e7e6f048.js.map": "/inner-sun/static/js/main.e7e6f048.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.5972fc86.css",
+    "static/js/main.e7e6f048.js"
+  ]
+}
