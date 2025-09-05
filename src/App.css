@@ -1,15 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap');
+
 body {
   font-family: 'Poppins', sans-serif;
 }
+
+.hero-section {
+  min-height: 70vh;
+}
+
 .hero-image {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 80vh;
+  height: 70vh;
   object-fit: cover;
-  z-index: -1;
+}
+
+.splide__slide {
+  display: flex;
+  justify-content: center;
 }
 
 .btn-send-message {
@@ -27,29 +33,8 @@ body {
   padding: 8px;
 }
 
-.card {
-  width: 200px;
-  height: 330px;
-}
-
 .card-img-top {
   height: 150px;
-}
-
-.card-placeholder {
-  text-align: center;
-  vertical-align: middle;
-  height: 150px;
-  width: 100%;
-}
-
-.card-placeholder img {
-  height: 60%;
-  width: 70%;
-  transform: translateY(30%);
-}
-
-.card-footer {
-  color: green;
-  text-align: end;
+  width: 150px;
+  margin: 0 auto;
 }

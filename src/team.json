@@ -1,0 +1,142 @@
+[
+  {
+    "name": "Dr. Aisha Rahman",
+    "title": "Licensed Clinical Psychologist",
+    "specialization": "Cultural adjustment and academic stress for international students",
+    "profile_photo": "https://example.com/photos/aisha_rahman.jpg",
+    "email": "aisha.rahman@globaltherapy.org"
+  },
+  {
+    "name": "Mr. Kenji Tanaka",
+    "title": "Mental Health Counselor",
+    "specialization": "Language barriers and homesickness in international students",
+    "profile_photo": "https://example.com/photos/kenji_tanaka.jpg",
+    "email": "kenji.tanaka@campuswellness.net"
+  },
+  {
+    "name": "Ms. Maria Gonzalez",
+    "title": "Licensed Professional Counselor",
+    "specialization": "Identity and belonging issues among Latinx international students",
+    "profile_photo": "https://example.com/photos/maria_gonzalez.jpg",
+    "email": "maria.gonzalez@intstudentcare.com"
+  },
+  {
+    "name": "Dr. Samuel Osei",
+    "title": "Clinical Psychologist",
+    "specialization": "Stress management and cultural integration for African students",
+    "profile_photo": "https://example.com/photos/samuel_osei.jpg",
+    "email": "samuel.osei@globalmindcare.org"
+  },
+  {
+    "name": "Ms. Linh Tran",
+    "title": "Therapist and Academic Coach",
+    "specialization": "Academic pressure and social isolation in Southeast Asian students",
+    "profile_photo": "https://example.com/photos/linh_tran.jpg",
+    "email": "linh.tran@studyabroadtherapy.com"
+  },
+  {
+    "name": "Mr. David Cohen",
+    "title": "Licensed Clinical Social Worker",
+    "specialization": "Adjustment issues and anxiety in Middle Eastern students",
+    "profile_photo": "https://example.com/photos/david_cohen.jpg",
+    "email": "david.cohen@intstudenthelp.org"
+  },
+  {
+    "name": "Dr. Fatima Al-Mansoori",
+    "title": "Psychotherapist",
+    "specialization": "Cultural identity and gender roles in international students",
+    "profile_photo": "https://example.com/photos/fatima_mansoori.jpg",
+    "email": "fatima.mansoori@globalstudentcare.com"
+  },
+  {
+    "name": "Ms. Chloe Dubois",
+    "title": "Counseling Psychologist",
+    "specialization": "Depression and homesickness in European exchange students",
+    "profile_photo": "https://example.com/photos/chloe_dubois.jpg",
+    "email": "chloe.dubois@campusconnect.org"
+  },
+  {
+    "name": "Mr. Rajiv Mehta",
+    "title": "Mental Health Therapist",
+    "specialization": "Career anxiety and family expectations in South Asian students",
+    "profile_photo": "https://example.com/photos/rajiv_mehta.jpg",
+    "email": "rajiv.mehta@intstudentwellness.com"
+  },
+  {
+    "name": "Dr. Emily Zhang",
+    "title": "Clinical Psychologist",
+    "specialization": "Cross-cultural relationships and communication challenges",
+    "profile_photo": "https://example.com/photos/emily_zhang.jpg",
+    "email": "emily.zhang@globaltherapyhub.org"
+  },
+  {
+    "name": "Mr. Ahmed El-Sayed",
+    "title": "Licensed Therapist",
+    "specialization": "Faith-based counseling for Muslim international students",
+    "profile_photo": "https://example.com/photos/ahmed_elsayed.jpg",
+    "email": "ahmed.elsayed@intstudentcare.org"
+  },
+  {
+    "name": "Ms. Hannah Kim",
+    "title": "School Counselor",
+    "specialization": "Transition support for Korean and East Asian students",
+    "profile_photo": "https://example.com/photos/hannah_kim.jpg",
+    "email": "hannah.kim@campuswellbeing.net"
+  },
+  {
+    "name": "Dr. Lucas Ferreira",
+    "title": "Psychologist and Researcher",
+    "specialization": "Mental health stigma and support for Brazilian students",
+    "profile_photo": "https://example.com/photos/lucas_ferreira.jpg",
+    "email": "lucas.ferreira@intstudenthealth.org"
+  },
+  {
+    "name": "Ms. Noura Haddad",
+    "title": "Clinical Social Worker",
+    "specialization": "Trauma-informed care for refugee and displaced students",
+    "profile_photo": "https://example.com/photos/noura_haddad.jpg",
+    "email": "noura.haddad@globalstudentwellness.com"
+  },
+  {
+    "name": "Mr. Tomasz Nowak",
+    "title": "Mental Health Consultant",
+    "specialization": "Adjustment and academic burnout in Eastern European students",
+    "profile_photo": "https://example.com/photos/tomasz_nowak.jpg",
+    "email": "tomasz.nowak@intstudenttherapy.org"
+  },
+  {
+    "name": "Dr. Grace Ncube",
+    "title": "Psychotherapist",
+    "specialization": "Empowerment and resilience building for African women students",
+    "profile_photo": "https://example.com/photos/grace_ncube.jpg",
+    "email": "grace.ncube@campusmentalhealth.org"
+  },
+  {
+    "name": "Ms. Isabella Rossi",
+    "title": "Licensed Counselor",
+    "specialization": "Loneliness and cultural shock in Italian and Spanish students",
+    "profile_photo": "https://example.com/photos/isabella_rossi.jpg",
+    "email": "isabella.rossi@intstudentcare.net"
+  },
+  {
+    "name": "Mr. Yuki Nakamura",
+    "title": "Student Wellness Coach",
+    "specialization": "Mindfulness and stress reduction for Japanese students",
+    "profile_photo": "https://example.com/photos/yuki_nakamura.jpg",
+    "email": "yuki.nakamura@globalstudenthub.org"
+  },
+  {
+    "name": "Dr. Leila Benali",
+    "title": "Clinical Psychologist",
+    "specialization": "Gender identity and cultural expectations in North African students",
+    "profile_photo": "https://example.com/photos/leila_benali.jpg",
+    "email": "leila.benali@intstudentwellbeing.com"
+  },
+  {
+    "name": "Ms. Sofia Petrova",
+    "title": "Therapist and Academic Advisor",
+    "specialization": "Balancing academics and social life for Slavic students",
+    "profile_photo": "https://example.com/photos/sofia_petrova.jpg",
+    "email": "sofia.petrova@campuscare.org"
+  }
+]
