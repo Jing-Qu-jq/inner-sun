@@ -5,11 +5,11 @@ body {
 }
 
 .hero-section {
-  min-height: 70vh;
+  min-height: 60vh;
 }
 
 .hero-image {
-  height: 70vh;
+  height: 60vh;
   object-fit: cover;
 }
 
@@ -23,14 +23,13 @@ body {
   line-height: 2em;
   position: absolute;
   right: 0;
-  top: 73%;
-  transform: translateY(-25%);
+  top: 50%;
+  transform: translateY(-50%);
   width: 35px;
   height: 35px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
 }
 
 .card-img-top {

@@ -5,6 +5,7 @@ import 'react-chat-elements/dist/main.css';
 
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
+import Card from 'react-bootstrap/Card';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 
@@ -45,7 +46,7 @@ function Chat({
     emailCTAProps,
     listingId,
 }) {
-    const messageListReferance = React.createRef();
+    const messageListReference = React.createRef();
 
     const [chatMode, setChatMode] = useState(false);
     const [question, setQuestion] = useState('');
@@ -87,16 +88,16 @@ function Chat({
                 }}
                 >
                     <MessageList
-                        referance={messageListReferance}
-                        className="message-list text-gray-darkest text-size-300 margin-bottom-4"
+                        referance={messageListReference}
+                        className="message-list"
                         lockable
                         toBottomHeight="100%"
                         dataSource={messageList}
                     />
                 </div>
             )}
+            { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">What can I help you with?</h1>) }
             <div className="position-relative">
-                <h1>What can I help you with?</h1>
                 <Form.Control
                     className="mt-3"
                     style={{borderRadius: '25px'}}
@@ -118,22 +119,10 @@ function Chat({
                     />
                 </Button>
             </div>
-            <div className="d-flex justify-content-end mt-5 gap-2">
-                <Button
-                    variant="secondary"
-                >
-                    Talk to a real person
-                </Button>
-                <Button
-                    variant="secondary"
-                >
-                    placeholder
-                </Button>
-                <Button
-                    variant="secondary"
-                >
-                    placeholder
-                </Button>
+            <div className="mt-5">
+                <Card>
+                    <Card.Body>This is some text within a card body.</Card.Body>
+                </Card>
             </div>
         </>
     );

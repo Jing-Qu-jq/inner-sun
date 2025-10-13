@@ -3,6 +3,8 @@ import '@splidejs/react-splide/css';
 import Container from 'react-bootstrap/Container';
 import Image from 'react-bootstrap/Image';
 import { Splide, SplideSlide } from '@splidejs/react-splide';
+import heroImage from '../images/hero_image.png';
+import teamData from '../team.json';
 import TeamCard from '../components/TeamCard';
 
 const HomePage = () => (
@@ -20,10 +22,13 @@ const HomePage = () => (
                     rewind: true,
                     perPage: 4,
                     breakpoints: {
+                        1200: {
+                            perPage: 3,
+                        },
                         768: {
                             perPage: 2,
                         },
-                        576: {
+                        480: {
                             perPage: 1,
                         }
                     }

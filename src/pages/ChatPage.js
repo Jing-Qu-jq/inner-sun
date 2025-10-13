@@ -3,7 +3,7 @@ import Chat from "../components/Chat";
 
 const ChatPage = () => {
     return (
-        <Container className="p-5">
+        <Container className="p-5" style={{ height: '90vh', maxWidth: '1000px' }}>
             <Chat />
         </Container>);
 };
