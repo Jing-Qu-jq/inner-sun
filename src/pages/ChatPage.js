@@ -5,7 +5,8 @@ const ChatPage = () => {
     return (
         <Container className="p-5" style={{ height: '90vh', maxWidth: '1000px' }}>
             <Chat />
-        </Container>);
+        </Container>
+    );
 };
 
 export default ChatPage;

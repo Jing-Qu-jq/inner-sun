@@ -9,18 +9,6 @@ import Card from 'react-bootstrap/Card';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 
-const fetchSummary = async (listingId) => {
-    try {
-        const response = await fetch('https://qno3ci0y20.execute-api.us-east-1.amazonaws.com/vehicle-summary?listingId=' + listingId);
-        const json = await response.json();
-        return json?.summary;
-    } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(err);
-        return '';
-    }
-};
-
 const fetchAnswer = async (listingId, question, summary) => {
     try {
         const response = await fetch('https://qno3ci0y20.execute-api.us-east-1.amazonaws.com/vehicle-summary/id/' + listingId, {
@@ -43,7 +31,6 @@ const fetchAnswer = async (listingId, question, summary) => {
 };
 
 function Chat({
-    emailCTAProps,
     listingId,
 }) {
     const messageListReference = React.createRef();
@@ -79,14 +66,9 @@ function Chat({
     };
 
     return (
-        <>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {chatMode && (
-                <div style={{
-                    maxHeight: '300px',
-                    overflowY: 'auto',
-                    marginBottom: '1rem',
-                }}
-                >
+                <div className="message-list-container">
                     <MessageList
                         referance={messageListReference}
                         className="message-list"
@@ -99,7 +81,6 @@ function Chat({
             { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">What can I help you with?</h1>) }
             <div className="position-relative">
                 <Form.Control
-                    className="mt-3"
                     style={{borderRadius: '25px'}}
                     type="text"
                     value={question}
@@ -119,12 +100,14 @@ function Chat({
                     />
                 </Button>
             </div>
-            <div className="mt-5">
-                <Card>
-                    <Card.Body>This is some text within a card body.</Card.Body>
-                </Card>
-            </div>
-        </>
+            {!chatMode && (
+                <div className="mt-5">
+                    <Card>
+                        <Card.Body>This is some text within a card body.</Card.Body>
+                    </Card>
+                </div>
+            )}
+        </div>
     );
 }
 
