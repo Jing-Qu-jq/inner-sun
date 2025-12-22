@@ -8,27 +8,7 @@ import Form from 'react-bootstrap/Form';
 import Card from 'react-bootstrap/Card';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
-
-const fetchAnswer = async (listingId, question, summary) => {
-    try {
-        const response = await fetch('https://qno3ci0y20.execute-api.us-east-1.amazonaws.com/vehicle-summary/id/' + listingId, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                query: question,
-                summary,
-            }),
-        });
-        const json = await response.json();
-        return json?.response;
-    } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(err);
-        return '';
-    }
-};
+import ConversationFetcher from '../../fetchers/ConversationFetcher';
 
 function Chat({
     listingId,
@@ -56,10 +36,11 @@ function Chat({
             text: '...',
         };
         setMessageList([...messageList, answer]);
-        fetchAnswer(listingId, question).then((data) => {
+
+        ConversationFetcher(question).then((reply) => {
             setMessageList([...messageList, {
                 ...answer,
-                text: data,
+                text: reply,
                 date: new Date(),
             }]);
         });
