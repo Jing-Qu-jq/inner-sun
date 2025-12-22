@@ -8,7 +8,7 @@ import Layout from "./pages/Layout";
 export default function App() {
   return (
       <div className="App">
-          <BrowserRouter>
+          <BrowserRouter basename="/inner-sun">
               <Routes>
                   <Route path="/" element={<Layout />}>
                       <Route
