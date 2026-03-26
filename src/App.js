@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import "./App.css";
 import HomePage from "./pages/HomePage";
 import ChatPage from "./pages/ChatPage";
@@ -8,7 +8,7 @@ import Layout from "./pages/Layout";
 export default function App() {
   return (
       <div className="App">
-          <BrowserRouter basename="/inner-sun">
+          <HashRouter>
               <Routes>
                   <Route path="/" element={<Layout />}>
                       <Route
@@ -23,7 +23,7 @@ export default function App() {
                       />
                   </Route>
               </Routes>
-          </BrowserRouter>
+          </HashRouter>
       </div>
   );
 }
