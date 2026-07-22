@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>InnerSun — System Architecture</title>
+<style>
+  :root {
+    --ink: #1f2933;
+    --muted: #647084;
+    --bg: #f7f8fb;
+    --card: #ffffff;
+    --line: #e6e9f0;
+    --accent: #f5a623;      /* InnerSun amber */
+    --accent-deep: #e08600;
+    --blue: #2f6fed;
+    --blue-soft: #eaf1ff;
+    --green: #1f9d6b;
+    --green-soft: #e7f7f0;
+    --pink: #d6336c;
+    --pink-soft: #fdeef3;
+    --purple: #7c4dff;
+    --purple-soft: #f1ecff;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 28px rgba(16,24,40,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+    font-size: 16px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* Hero */
+  header.hero {
+    background:
+      radial-gradient(900px 400px at 85% -10%, rgba(245,166,35,.22), transparent 60%),
+      linear-gradient(135deg, #1b2440 0%, #2a3566 60%, #3a3f80 100%);
+    color: #fff;
+    padding: 64px 24px 56px;
+    margin-bottom: 40px;
+  }
+  header.hero .inner { max-width: 1040px; margin: 0 auto; }
+  .sun {
+    display:inline-flex; align-items:center; gap:10px;
+    font-weight: 700; letter-spacing:.3px; opacity:.95; margin-bottom:18px;
+  }
+  .sun .dot {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, #ffe08a, var(--accent));
+    box-shadow: 0 0 0 6px rgba(245,166,35,.18);
+  }
+  header.hero h1 { font-size: 2.5rem; line-height:1.12; margin: 0 0 14px; font-weight: 800; }
+  header.hero p.tag { font-size: 1.12rem; max-width: 760px; margin: 0 0 22px; color: #d9def0; }
+  .badges { display:flex; flex-wrap:wrap; gap:10px; }
+  .badge {
+    font-size:.82rem; font-weight:600; padding:6px 13px; border-radius:999px;
+    background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22);
+  }
+
+  h2 {
+    font-size: 1.6rem; margin: 56px 0 8px; padding-top: 12px; font-weight: 750;
+    letter-spacing:-.2px;
+  }
+  h2 .num {
+    display:inline-flex; align-items:center; justify-content:center;
+    width: 34px; height:34px; border-radius:10px; margin-right:12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+    color:#fff; font-size:1rem; font-weight:800; vertical-align: middle;
+  }
+  h3 { font-size: 1.12rem; margin: 28px 0 6px; }
+  p { margin: 12px 0; }
+  a { color: var(--blue); }
+
+  .lead {
+    background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 22px 26px; box-shadow: var(--shadow); margin-bottom: 8px;
+  }
+
+  /* Diagram cards */
+  .figure {
+    background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 22px; margin: 22px 0 8px; overflow-x:auto;
+  }
+  .mermaid { display:flex; justify-content:center; }
+  .figcap { color: var(--muted); font-size:.9rem; margin-top: 12px; text-align:center; }
+
+  /* Explanation callouts */
+  .note { border-radius: 12px; padding: 14px 18px; margin: 14px 0; border:1px solid var(--line); }
+  .note .label {
+    display:inline-block; font-size:.72rem; font-weight:800; letter-spacing:.6px;
+    text-transform:uppercase; padding:2px 9px; border-radius:6px; margin-bottom:6px;
+  }
+  .plain { background: #fffdf6; border-color:#f3e3bd; }
+  .plain .label { background: var(--accent); color:#fff; }
+  .eng { background: var(--blue-soft); border-color:#cfe0ff; }
+  .eng .label { background: var(--blue); color:#fff; }
+
+  /* Tables */
+  table { width:100%; border-collapse: collapse; margin: 18px 0; background:var(--card);
+          border:1px solid var(--line); border-radius: var(--radius); overflow:hidden; box-shadow: var(--shadow); }
+  th, td { text-align:left; padding: 12px 16px; border-bottom:1px solid var(--line); vertical-align: top; font-size:.95rem; }
+  th { background:#f1f4fa; font-weight:700; }
+  tr:last-child td { border-bottom:none; }
+  td code, p code, li code { background:#eef1f7; padding:1px 6px; border-radius:6px; font-size:.88em; }
+
+  ul { margin:12px 0; padding-left: 22px; }
+  li { margin: 7px 0; }
+
+  .pill { font-size:.7rem; font-weight:800; padding:2px 8px; border-radius:999px; color:#fff; }
+  .pill.free { background: var(--green); }
+  .pill.paid { background: var(--pink); }
+
+  hr { border:none; border-top:1px solid var(--line); margin: 40px 0; }
+
+  footer { color:var(--muted); font-size:.88rem; text-align:center; margin-top: 40px; }
+
+  /* TOC */
+  nav.toc {
+    background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 16px 22px; margin-bottom: 8px;
+  }
+  nav.toc strong { display:block; font-size:.78rem; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin-bottom:8px; }
+  nav.toc ol { margin:0; padding-left: 20px; columns: 2; }
+  nav.toc a { text-decoration:none; }
+  nav.toc a:hover { text-decoration:underline; }
+
+  @media (max-width: 640px) {
+    header.hero h1 { font-size: 1.9rem; }
+    nav.toc ol { columns: 1; }
+  }
+  @media print {
+    header.hero { background: #1b2440 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .figure, table, .lead, .note { box-shadow:none; }
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="inner">
+    <div class="sun"><span class="dot"></span> InnerSun</div>
+    <h1>System Architecture</h1>
+    <p class="tag">An AI psychological-counseling assistant for international students. Our moat is a proprietary
+      knowledge base of researcher-authored <em>personas</em>; the AI retrieves and applies that expertise in real
+      time. The AI is the hook — the goal is to build enough trust that students book a session with a real human counselor.</p>
+    <div class="badges">
+      <span class="badge">👩‍💻 For Engineers</span>
+      <span class="badge">📋 For PMs</span>
+      <span class="badge">📈 For Investors</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <strong>Contents</strong>
+    <ol>
+      <li><a href="#s1">The Big Picture</a></li>
+      <li><a href="#s2">Conversation Flow</a></li>
+      <li><a href="#s3">Personas &amp; Retrieval (RAG)</a></li>
+      <li><a href="#s4">Caching &amp; Cost Control</a></li>
+      <li><a href="#s5">Free vs. Paid</a></li>
+      <li><a href="#s6">Why It's Defensible</a></li>
+      <li><a href="#s7">Hard Constraints</a></li>
+      <li><a href="#appendix">Reference Stack</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============ SECTION 1 ============ -->
+  <h2 id="s1"><span class="num">1</span>The Big Picture</h2>
+
+  <div class="figure">
+    <pre class="mermaid">
+flowchart TD
+    subgraph Client["🖥️ Client — React SPA (English / 中文)"]
+        UI["Home · Chat · Login<br/><i>no API keys in the browser</i>"]
+    end
+    UI -->|HTTPS| API
+    subgraph Backend["⚙️ Backend — Orchestration API (the brain)"]
+        API["API Gateway + Auth<br/><i>login optional</i>"]
+        ORCH["Chat Orchestrator"]
+        SAFE["Safety / Crisis Detection"]
+        NUDGE["Booking-Nudge Engine"]
+    end
+    API --> ORCH
+    ORCH --> SAFE
+    ORCH --> NUDGE
+    subgraph AI["🤖 AI Layer — OpenAI (model-tiered for cost)"]
+        EMB["Embeddings<br/>text-embedding-3-small · cheap"]
+        CLASSIFY["Assess / classify<br/>gpt-4o-mini · cheap"]
+        GEN["Counseling reply<br/>gpt-4o · premium"]
+    end
+    subgraph Data["🗄️ Data Layer"]
+        PG[("Postgres + pgvector<br/>Personas · Users · Memory · Bookings")]
+        REDIS[("Redis<br/>Persona + Semantic cache")]
+    end
+    ORCH <--> EMB
+    ORCH <--> CLASSIFY
+    ORCH <--> GEN
+    ORCH <--> PG
+    ORCH <--> REDIS
+    subgraph Human["💳 Human Funnel — where revenue is made"]
+        BOOK["Booking / Scheduling"]
+        PAY["Payments / Subscription"]
+    end
+    NUDGE --> BOOK
+    BOOK --> PAY
+    subgraph Flywheel["🔄 Data Flywheel — consented &amp; de-identified"]
+        LOG["Conversation logs"]
+        ANALYTICS["Analytics + gap detection"]
+        AUTHOR["Researchers author new personas"]
+    end
+    ORCH -.->|with consent| LOG
+    LOG --> ANALYTICS
+    ANALYTICS --> AUTHOR
+    AUTHOR --> PG
+
+    classDef client fill:#fff3e0,stroke:#e08600,stroke-width:1.5px,color:#5a3b00;
+    classDef backend fill:#eaf1ff,stroke:#2f6fed,stroke-width:1.5px,color:#16306e;
+    classDef ai fill:#f1ecff,stroke:#7c4dff,stroke-width:1.5px,color:#3d2b80;
+    classDef data fill:#e7f7f0,stroke:#1f9d6b,stroke-width:1.5px,color:#0c4a32;
+    classDef human fill:#fdeef3,stroke:#d6336c,stroke-width:1.5px,color:#7a1138;
+    classDef flow fill:#fffdf0,stroke:#caa53a,stroke-width:1.5px,color:#5a4708;
+    class UI client;
+    class API,ORCH,SAFE,NUDGE backend;
+    class EMB,CLASSIFY,GEN ai;
+    class PG,REDIS data;
+    class BOOK,PAY human;
+    class LOG,ANALYTICS,AUTHOR flow;
+    </pre>
+    <div class="figcap">Figure 1 — End-to-end component architecture.</div>
+  </div>
+
+  <div class="note plain"><span class="label">In plain language</span><br/>
+    The student's browser only ever talks to <em>our</em> backend — never directly to OpenAI. Our backend
+    (the "orchestrator") is the brain: it figures out what the student needs, looks up the right
+    researcher-authored guidance, asks OpenAI to write a warm reply in that style, checks it for safety, and
+    decides whether it's the right moment to suggest a human counselor. Everything the AI "knows" lives in our
+    database, which our researchers control.</div>
+
+  <div class="note eng"><span class="label">Engineering detail</span><br/>
+    The orchestrator is a thin, stateless service (Node or Python). Keeping OpenAI calls behind it does three
+    things at once: <b>(1) security</b> — the API key never reaches the browser (today's prototype leaks it, which
+    we must fix); <b>(2) cost control</b> — we cache, tier models, and cap tokens centrally; <b>(3) portability</b>
+    — the provider sits behind one interface, so "we use OpenAI" is a config choice, not a lock-in.</div>
+
+  <!-- ============ SECTION 2 ============ -->
+  <h2 id="s2"><span class="num">2</span>The Conversation Flow</h2>
+  <p>Login → Counsel → Nudge toward a human.</p>
+
+  <div class="figure">
+    <pre class="mermaid">
+flowchart TD
+    Start(["User arrives"]) --> Q1{"Logged in?"}
+    Q1 -->|No · anonymous| Anon["Ephemeral session<br/>Free · Instant · No memory"]
+    Q1 -->|Yes · registered| Reg["Load saved memory<br/>+ key facts"]
+    Anon --> Chat["User sends a message"]
+    Reg --> Chat
+    Chat --> Cache{"Semantic cache hit?<br/><i>FAQ / info only</i>"}
+    Cache -->|Yes| Cached["Return cached answer<br/>~$0 model cost"]
+    Cache -->|No| Retrieve["Embed conversation →<br/>vector search: top-N personas"]
+    Retrieve --> Floor{"Match score ≥<br/>relevance floor?"}
+    Floor -->|Yes| Strat["Inject matched<br/>persona strategies"]
+    Floor -->|No| General["General empathetic mode<br/>+ flag: persona gap"]
+    Strat --> Build["Assemble prompt:<br/>system + strategies + history"]
+    General --> Build
+    Build --> Gen["gpt-4o writes the reply"]
+    Gen --> SafetyChk{"Crisis / self-harm<br/>signals?"}
+    SafetyChk -->|Yes| Crisis["Surface crisis resources<br/>+ strong human hand-off"]
+    SafetyChk -->|No| NudgeChk{"Enough trust /<br/>intent to book?"}
+    NudgeChk -->|Yes| Nudge["Gently suggest booking<br/>a real counselor"]
+    NudgeChk -->|No| Reply
+    Crisis --> Reply(["Reply to user"])
+    Nudge --> Reply
+    Cached --> Reply
+    Reply --> LogStep["Log if consented<br/><i>de-identified</i>"]
+
+    classDef decision fill:#fff3e0,stroke:#e08600,stroke-width:1.5px,color:#5a3b00;
+    classDef action fill:#eaf1ff,stroke:#2f6fed,stroke-width:1.4px,color:#16306e;
+    classDef terminal fill:#e7f7f0,stroke:#1f9d6b,stroke-width:1.6px,color:#0c4a32;
+    classDef danger fill:#fdeef3,stroke:#d6336c,stroke-width:1.6px,color:#7a1138;
+    class Q1,Cache,Floor,SafetyChk,NudgeChk decision;
+    class Anon,Reg,Chat,Retrieve,Strat,General,Build,Gen,Nudge,Cached,LogStep action;
+    class Start,Reply terminal;
+    class Crisis danger;
+    </pre>
+    <div class="figcap">Figure 2 — Per-message conversation flow.</div>
+  </div>
+
+  <div class="note plain"><span class="label">In plain language</span><br/>
+    Anyone can start instantly and anonymously — that's the "tree hole" promise and the top of the funnel.
+    Logged-in users get their history remembered. For each message, we quietly figure out which researcher cases
+    best fit this student, apply that guidance, write a caring reply, double-check it's safe, and — only when trust
+    is there — gently mention that a real counselor is available.</div>
+
+  <div class="note eng"><span class="label">Engineering detail</span><br/>
+    Persona matching is a <em>running</em> assessment, re-evaluated as the conversation reveals more — not a
+    one-time gate on the first message. The "relevance floor" is the safety valve: if nothing matches well, we
+    don't force irrelevant clinical strategies; we fall back to general empathetic listening <b>and</b> flag the
+    conversation as a content gap (feeding the flywheel).</div>
+
+  <!-- ============ SECTION 3 ============ -->
+  <h2 id="s3"><span class="num">3</span>How Personas Are Stored &amp; Retrieved (RAG)</h2>
+
+  <div class="figure">
+    <pre class="mermaid">
+flowchart LR
+    subgraph Authoring["✍️ Researchers — admin tool (中文)"]
+        WRITE["Write persona<br/>profile · signals · strategies<br/>· avoid · escalation"]
+    end
+    WRITE -->|on save: embed once| EMB1["text-embedding-3-small"]
+    EMB1 --> PGV[("Postgres + pgvector<br/>persona row + embedding")]
+    subgraph Runtime["⚡ At chat time"]
+        CONV["Running conversation"] --> EMB2["embed (cached)"]
+        EMB2 --> SEARCH["vector similarity search"]
+        PGV --> SEARCH
+        SEARCH --> TOPN["top-N personas<br/>+ scores"]
+    end
+
+    classDef author fill:#fff3e0,stroke:#e08600,stroke-width:1.5px,color:#5a3b00;
+    classDef run fill:#eaf1ff,stroke:#2f6fed,stroke-width:1.4px,color:#16306e;
+    classDef store fill:#e7f7f0,stroke:#1f9d6b,stroke-width:1.6px,color:#0c4a32;
+    class WRITE,EMB1 author;
+    class CONV,EMB2,SEARCH,TOPN run;
+    class PGV store;
+    </pre>
+    <div class="figcap">Figure 3 — Authoring once, retrieving at chat time.</div>
+  </div>
+
+  <p><b>Where personas live:</b> <b>Postgres with the <code>pgvector</code> extension.</b> One managed database
+    (Supabase / Neon / AWS RDS) holds <em>everything</em> — persona text, vector embeddings, user accounts, memory,
+    and bookings — with real transactions and one set of backups. We do <b>not</b> need a separate specialty vector
+    database (Pinecone/Qdrant/Weaviate) at our scale; pgvector handles tens of thousands of personas comfortably,
+    and we can graduate later <em>if</em> retrieval volume ever demands it.</p>
+
+  <div class="note eng"><span class="label">Engineering detail</span><br/>
+    A persona's embedding is computed <b>once</b>, when a researcher saves it, and stored alongside the row — never
+    recomputed at chat time. Adding persona #200 is a pure content task; no code or schema change. Retrieval is
+    <code>ORDER BY embedding &lt;=&gt; :query_vector LIMIT N</code>.</div>
+
+  <!-- ============ SECTION 4 ============ -->
+  <h2 id="s4"><span class="num">4</span>Caching &amp; Cost Control</h2>
+  <p>Three independent cache layers, each answering a specific cost question.</p>
+
+  <div class="figure">
+    <pre class="mermaid">
+flowchart TD
+    MSG["Incoming message"] --> SC{"① Semantic cache<br/>similar FAQ asked before?"}
+    SC -->|hit ≥ threshold| RET["Return stored answer · $0"]
+    SC -->|miss| PC{"② Persona cache<br/>persona already in Redis?"}
+    PC -->|hit| USE["Use cached persona<br/>no DB round-trip"]
+    PC -->|miss| DB["Fetch from Postgres → cache it"]
+    USE --> PROMPT
+    DB --> PROMPT["Build prompt"]
+    PROMPT --> PPC["③ OpenAI prompt caching<br/>static system prefix at a discount"]
+    PPC --> CALL["Model call"]
+
+    classDef decision fill:#fff3e0,stroke:#e08600,stroke-width:1.5px,color:#5a3b00;
+    classDef action fill:#eaf1ff,stroke:#2f6fed,stroke-width:1.4px,color:#16306e;
+    classDef save fill:#e7f7f0,stroke:#1f9d6b,stroke-width:1.6px,color:#0c4a32;
+    class SC,PC decision;
+    class MSG,DB,PROMPT,PPC,CALL action;
+    class RET,USE save;
+    </pre>
+    <div class="figcap">Figure 4 — Three cache layers in front of the model.</div>
+  </div>
+
+  <table>
+    <thead><tr><th>#</th><th>Cache</th><th>What it saves</th><th>Notes / caution</th></tr></thead>
+    <tbody>
+      <tr><td><b>①</b></td><td><b>Semantic cache</b></td><td>The whole model call for repeated/similar questions</td>
+        <td><b>Only for non-personal FAQ/info</b> — "Is this confidential?", "How do I book?".
+        <b>Never</b> cache a personalized emotional reply: returning one distressed student's response to another is
+        clinically wrong and unsettling. Match by embedding similarity above a high threshold.</td></tr>
+      <tr><td><b>②</b></td><td><b>Persona cache</b></td><td>The database round-trip for popular personas</td>
+        <td>Personas change rarely, so cache aggressively in Redis with a long TTL; <b>invalidate on edit</b> when a
+        researcher updates one. Their embeddings are already stored (never re-embedded).</td></tr>
+      <tr><td><b>③</b></td><td><b>Prompt caching</b></td><td>A large discount on input tokens</td>
+        <td>OpenAI bills the unchanged system-prompt prefix at a reduced rate when reused. Keep static guidance at
+        the <b>front</b> of the prompt so it stays cacheable.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Other ways we save money</h3>
+  <ul>
+    <li><b>Model tiering — the biggest lever.</b> Use <code>gpt-4o-mini</code> for cheap, high-volume jobs
+      (classifying the user, summarizing history, safety screening) and reserve <code>gpt-4o</code> for the one
+      thing quality depends on: the counseling reply.</li>
+    <li><b>History summarization</b> — don't resend the full transcript each turn; summarize older messages so the
+      prompt stays short (tokens = money).</li>
+    <li><b>Token caps</b> — bounded <code>max_tokens</code> on replies.</li>
+    <li><b>Cheap, small embedding model</b> (<code>text-embedding-3-small</code>) + an embedding cache.</li>
+    <li><b>Rate limiting / abuse protection</b> so free anonymous usage can't be farmed for cost.</li>
+  </ul>
+
+  <!-- ============ SECTION 5 ============ -->
+  <h2 id="s5"><span class="num">5</span>Free vs. Paid — Monetization</h2>
+  <p><b>Recommendation: freemium, but keep the "tree hole" venting free.</b> The free AI chat is the brand promise
+    and the top of the funnel — a paywall on "talk to someone when you're struggling" would poison both trust and
+    acquisition. Monetize the things <em>around</em> it instead.</p>
+
+  <table>
+    <thead><tr><th>Tier</th><th>Price</th><th>What they get</th></tr></thead>
+    <tbody>
+      <tr><td><b>Anonymous</b></td><td><span class="pill free">FREE</span></td><td>Instant AI chat, no memory, rate-limited. The hook.</td></tr>
+      <tr><td><b>Registered</b></td><td><span class="pill free">FREE</span></td><td>Memory across sessions, saved insights, daily message allowance.</td></tr>
+      <tr><td><b>Subscription</b></td><td><span class="pill paid">PAID</span> (optional)</td><td>Unlimited AI chat, richer memory/insights, <b>priority + discounted</b> human sessions.</td></tr>
+      <tr><td><b>Human sessions</b></td><td><span class="pill paid">PAID</span> per session</td><td>Booking a real counselor — <b>the core revenue.</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note plain"><span class="label">Investor framing</span><br/>
+    AI chat is deliberately <em>low-margin lead generation</em> — which is exactly why the caching and model-tiering
+    above matter: they push cost per conversation toward near-zero, keeping customer-acquisition cost low. Real
+    revenue is the <b>human session bookings</b> (high value, recurring) plus optional subscription. The data
+    flywheel compounds the moat: more conversations → better personas → better AI → more trust → more bookings.</div>
+
+  <!-- ============ SECTION 6 ============ -->
+  <h2 id="s6"><span class="num">6</span>Why This Is Defensible</h2>
+  <ul>
+    <li><b>Proprietary clinical knowledge base.</b> Competitors are thin prompt-wrappers around the same public
+      models. Our researcher-authored, case-grounded personas are content no model has and no competitor can copy.</li>
+    <li><b>Editable &amp; traceable.</b> Because expertise lives in a database (RAG), not baked into model weights
+      (fine-tuning), a researcher can correct guidance in one row and it's live instantly — and every reply is
+      traceable to vetted source material. Critical for clinical responsibility.</li>
+    <li><b>A compounding data flywheel.</b> Real (consented, de-identified) conversations reveal which cases to
+      author next, so the library grows toward actual demand.</li>
+  </ul>
+
+  <!-- ============ SECTION 7 ============ -->
+  <h2 id="s7"><span class="num">7</span>Hard Constraints</h2>
+  <p>Must-haves, not nice-to-haves.</p>
+  <ul>
+    <li><b>Privacy &amp; consent.</b> This is sensitive mental-health data, much of it from Chinese nationals.
+      Anonymous logging requires a clear consent notice; using conversations to author personas requires
+      <em>separate, explicit</em> consent and <b>de-identification before any human review</b>. China's <b>PIPL</b>
+      (esp. cross-border transfer), <b>GDPR</b> for EU students, and special-category-data rules all apply —
+      <b>legal sign-off is required before the flywheel runs.</b> Design consent + logging from day one.</li>
+    <li><b>Safety.</b> Crisis/self-harm detection with real escalation paths and crisis resources is not optional
+      for a mental-health product.</li>
+    <li><b>Not a medical device.</b> The AI offers support and coping strategies, never diagnosis — and routes to
+      humans for anything beyond its scope.</li>
+  </ul>
+
+  <hr/>
+
+  <!-- ============ APPENDIX ============ -->
+  <h2 id="appendix"><span class="num">★</span>Reference Stack <span style="font-weight:400;color:var(--muted);font-size:1rem;">(proposed, not final)</span></h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Client</td><td>React SPA + i18n (EN/中文, extensible)</td><td>Existing prototype; more languages later</td></tr>
+      <tr><td>Backend</td><td>Node or Python orchestration API</td><td>Keeps keys server-side; provider-swappable</td></tr>
+      <tr><td>Models</td><td>OpenAI: gpt-4o (reply), gpt-4o-mini (classify/safety/summarize), text-embedding-3-small</td><td>Per choice; tiered for cost</td></tr>
+      <tr><td>Storage</td><td>Postgres + pgvector</td><td>One store for relational + vectors; cheap, simple</td></tr>
+      <tr><td>Cache</td><td>Redis</td><td>Semantic + persona caches</td></tr>
+      <tr><td>Funnel</td><td>Scheduling + payments (e.g., Stripe)</td><td>Human bookings = revenue</td></tr>
+    </tbody>
+  </table>
+
+  <footer>InnerSun — System Architecture · diagrams rendered live with Mermaid.js</footer>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    securityLevel: 'loose',
+    theme: 'base',
+    themeVariables: {
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", Roboto, sans-serif',
+      fontSize: '15px',
+      lineColor: '#9aa6bd',
+      primaryColor: '#eef2ff',
+      primaryBorderColor: '#6366f1',
+      primaryTextColor: '#1f2933'
+    },
+    flowchart: { curve: 'basis', htmlLabels: true, padding: 14, nodeSpacing: 55, rankSpacing: 62, useMaxWidth: true }
+  });
+</script>
+</body>
+</html>
