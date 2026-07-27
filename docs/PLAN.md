@@ -12,7 +12,7 @@
 
 ## Stack decisions (locked for V1)
 - **Frontend:** the existing React SPA (`inner-sun`), cleaned up and wired to our own backend.
-- **Backend:** **Node + TypeScript** orchestrator (Fastify or Express). One language across FE/BE → shared types.
+- **Backend:** **Node + TypeScript** orchestrator (**Fastify** — chosen in Feature 1). One language across FE/BE → shared types.
 - **Database:** **PostgreSQL + `pgvector`** (see Feature 3 for the provider recommendation).
 - **AI:** OpenAI — `gpt-4o` (reply), `gpt-4o-mini` (classify/safety/summarize/normalize), `text-embedding-3-small`.
 - **Repo:** single **monorepo** (`web` / `api` / `db` / `shared`), per the architecture discussion.
@@ -40,9 +40,11 @@ Make the existing UI presentable and correct before wiring real logic behind it.
 **AC:**
 1. Remove placeholder content ("This is some text within a card body.") and dead nav links (e.g. "Meet Our Team" with no target).
 2. Fix the chat message state bug (messages are appended immutably; rapid sends don't drop/overwrite messages).
-3. Delete the leftover unrelated `chatPrompt.md` (CarClarity/automotive) — it's not part of InnerSun.
+3. The leftover CarClarity/automotive `chatPrompt.md` has been **repurposed** into `services/api/src/prompts/system-prompt.md` as InnerSun's system prompt (done in Feature 1) — verify no automotive/CarClarity content remains anywhere in `apps/web`.
 4. Home page renders hero + team carousel cleanly; the placeholder profile photo and example team data are clearly marked as sample content.
 5. No console errors on Home or Chat pages.
+6. Replace the placeholder `apps/web/src/App.test.js` (default CRA `/learn react/i` test — currently fails against this app) with a real smoke test.
+7. Add the missing `apps/web/public/favicon.ico` (referenced by `index.html` but absent).
 
 ## Feature 3: Database setup — PostgreSQL + pgvector 🟢
 Stand up the single data store for everything (relational + vectors).
@@ -108,7 +110,7 @@ The core differentiator: match the conversation to Care Patterns and steer the r
 Assemble the final prompt and keep per-conversation cost low.
 **Depends on:** Feature 7.
 **AC:**
-1. Prompt = static system prompt (English) + injected Care-Pattern strategies + conversation context + "respond in {locale}" instruction.
+1. Prompt = static system prompt (English) + injected Care-Pattern strategies + conversation context + "respond in {locale}" instruction. *(The static prompt already exists at `services/api/src/prompts/system-prompt.md`, with `{{locale}}` and `{{care_pattern_strategies}}` slots to fill here.)*
 2. **Model tiering:** `gpt-4o-mini` for classify/normalize/summarize; `gpt-4o` only for the counseling reply.
 3. **History summarization:** older turns are summarized instead of resent; prompts stay bounded.
 4. **Prompt caching** enabled (static prefix first) and `max_tokens` capped.

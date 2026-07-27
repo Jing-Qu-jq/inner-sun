@@ -33,9 +33,6 @@ const Header = () => {
                         <Nav className="w-100 d-flex justify-content-evenly">
                             <Nav.Link as={Link} to="/">Home</Nav.Link>
                             <Nav.Link as={Link} to="/chatPage">Start Chatting</Nav.Link>
-                            <Nav.Link>
-                                Meet Our Team
-                            </Nav.Link>
                             <NavDropdown title="Language" id="basic-nav-dropdown">
                                 <NavDropdown.Item href="#action/3.1">
                                     English

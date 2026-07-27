@@ -17,6 +17,13 @@ const HomePage = () => (
             </div>
         </div>
         <div className="team-section py-5">
+            <div className="text-center mb-4">
+                <h2>Meet Our Team</h2>
+                <p className="text-muted mb-0">
+                    Sample content — placeholder profiles and photos shown for preview.
+                    Real team members are coming soon.
+                </p>
+            </div>
             <Splide
                 options={{
                     rewind: true,

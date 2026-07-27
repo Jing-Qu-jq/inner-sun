@@ -3,11 +3,14 @@ import Card from 'react-bootstrap/Card';
 import profileImage from '../../images/profile_image.png';
 
 const TeamCard = ({ member }) => (
-    <Card style={{ width: '18rem' }}>
+    <Card style={{ width: '18rem' }} className="position-relative">
+        <span className="badge text-bg-secondary position-absolute top-0 end-0 m-2">
+            Sample
+        </span>
         <Card.Img
             variant="top"
             src={profileImage}
-            alt={member.name}
+            alt={`Placeholder profile photo for ${member.name} (sample)`}
         />
         <Card.Body>
             <Card.Title>{member.name}</Card.Title>

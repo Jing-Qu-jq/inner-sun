@@ -8,19 +8,11 @@ import Layout from "./pages/Layout";
 export default function App() {
   return (
       <div className="App">
-          <HashRouter>
+          <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <Routes>
                   <Route path="/" element={<Layout />}>
-                      <Route
-                          index
-                          exact
-                          element={<HomePage />}
-                      />
-                      <Route
-                          exact
-                          path="chatPage"
-                          element={<ChatPage />}
-                      />
+                      <Route index element={<HomePage />} />
+                      <Route path="chatPage" element={<ChatPage />} />
                   </Route>
               </Routes>
           </HashRouter>
