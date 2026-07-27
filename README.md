@@ -1,84 +1,74 @@
-# Getting Started with Create React App
+# InnerSun
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+AI counseling chat for international students — an empathetic, Care-Pattern-grounded AI
+that acts as a hook toward booking a real human counselor. English + 简体中文.
 
-## Available Scripts
+This is a **monorepo**. For V1 everything runs on **localhost**; deployment is the last step.
+See the build plan in [docs/PLAN.md](docs/PLAN.md) and the system design in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-In the project directory, you can run:
-### `npm install`
+## Layout
 
-### `npm start`
-
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.
-
-### `npm run deploy`
-
-Deploys the app to GitHub Pages.\
-This command builds the app and pushes it to the `gh-pages` branch.\
-Make sure you have `gh-pages` installed as a dev dependency before running this command.
-
-## GitHub Pages Setup
-
-### GitHub Repository Settings
-
-1. Go to your GitHub repository
-2. Click **Settings** → **Pages**
-3. Under "Build and deployment":
-   - **Source**: Select "Deploy from a branch"
-   - **Branch**: Select `gh-pages` and `/root` folder
-4. Click **Save**
-5. Wait a few minutes for GitHub Pages to build and deploy
-6. Your site will be available at https://your-username.github.io/your-repo-name
-
-**Note**: The `gh-pages` branch is automatically created when you run `npm run deploy` for the first time.
-
-### Installation
-
-Install `gh-pages` as a development dependency:
-```bash
-npm install gh-pages --save-dev
+```
+apps/web         React SPA (the existing prototype)
+services/api     Node + TypeScript backend orchestrator (Fastify) — owns all OpenAI calls
+packages/shared  Shared TypeScript types (CarePattern, ChatMessage, API shapes)
+db/              Database migrations & seeds (PostgreSQL + pgvector) — added in Feature 3
+docs/            Product/architecture docs and the V1 plan
 ```
 
-### Configuration
+Managed with **npm workspaces** (npm 8+, Node 18+).
 
-1. Add a `homepage` field to your `package.json`:
-     ```json
-     "homepage": "https://your-username.github.io/your-repo-name"
-     ```
+## Prerequisites
 
-2. If deploying to a subdirectory, add `basename` to your BrowserRouter in `src/App.js`:
-   ```jsx
-   <BrowserRouter basename="/your-repo-name">
-   ```
+- Node.js 18+ and npm 8+
 
-3. The `package.json` should already have these scripts:
-   ```json
-   "predeploy": "npm run build",
-   "deploy": "gh-pages -d build"
-   ```
+## Install
 
-### Deployment
+From the repo root:
 
-Run the deploy command:
 ```bash
-npm run deploy
+npm install
 ```
 
-This will build your app and push it to the `gh-pages` branch on GitHub.
+This installs dependencies for every workspace and links them together.
 
+## Configure
+
+```bash
+cp .env.example .env
+```
+
+Fill in real values in `.env`. Secrets (like `OPENAI_API_KEY`) live **only** in the
+git-ignored `.env` and are read **server-side** by `services/api` — never in the browser.
+
+## Run web + api together (localhost)
+
+```bash
+npm run dev
+```
+
+This builds the shared types, then starts both:
+
+- **Web** (React) → http://localhost:3000
+- **API** (Fastify) → http://localhost:3001 (health check: http://localhost:3001/health)
+
+The web app proxies to the API in development (see `apps/web` `proxy` setting).
+
+## Useful scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Run web + api locally (this is the main dev command) |
+| `npm run dev:web` | Run only the web app |
+| `npm run dev:api` | Run only the API |
+| `npm run build:shared` | Compile `packages/shared` types |
+| `npm run build:web` | Production build of the web app |
+| `npm run build:api` | Compile the API to `services/api/dist` |
+| `npm run deploy:web` | Publish `apps/web` to GitHub Pages (prototype hosting) |
+
+## GitHub Pages (prototype)
+
+The existing prototype stays publishable from `apps/web` via `npm run deploy:web`
+(uses hash routing, so no base path config is needed). See
+[apps/web/README.md](apps/web/README.md) for details.
