@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>InnerSun — 系统架构 (System Architecture)</title>
+<style>
+  :root {
+    --ink: #1f2933; --muted: #647084; --bg: #f7f8fb; --card: #ffffff; --line: #e6e9f0;
+    --accent: #f5a623; --accent-deep: #e08600; --blue: #2f6fed; --blue-soft: #eaf1ff;
+    --green: #1f9d6b; --green-soft: #e7f7f0; --pink: #d6336c; --pink-soft: #fdeef3;
+    --purple: #7c4dff; --purple-soft: #f1ecff; --radius: 14px;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 28px rgba(16,24,40,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--bg); line-height: 1.75; font-size: 16px; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px 96px; }
+  header.hero { background:
+      radial-gradient(900px 400px at 85% -10%, rgba(245,166,35,.22), transparent 60%),
+      linear-gradient(135deg, #1b2440 0%, #2a3566 60%, #3a3f80 100%);
+    color: #fff; padding: 64px 24px 56px; margin-bottom: 40px; position: relative; }
+  header.hero .inner { max-width: 1040px; margin: 0 auto; }
+  .langswitch { position:absolute; top:20px; right:24px; font-size:.85rem; }
+  .langswitch a { color:#fff; text-decoration:none; opacity:.75; padding:4px 10px; border-radius:999px; }
+  .langswitch a.active { background:rgba(255,255,255,.18); opacity:1; font-weight:700; }
+  .sun { display:inline-flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.3px; opacity:.95; margin-bottom:18px; }
+  .sun .dot { width:22px; height:22px; border-radius:50%;
+    background: radial-gradient(circle at 50% 50%, #ffe08a, var(--accent)); box-shadow: 0 0 0 6px rgba(245,166,35,.18); }
+  header.hero h1 { font-size:2.4rem; line-height:1.15; margin:0 0 14px; font-weight:800; }
+  header.hero p.tag { font-size:1.1rem; max-width:780px; margin:0 0 22px; color:#d9def0; }
+  .badges { display:flex; flex-wrap:wrap; gap:10px; }
+  .badge { font-size:.82rem; font-weight:600; padding:6px 13px; border-radius:999px;
+    background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22); }
+  h2 { font-size:1.55rem; margin:56px 0 8px; padding-top:12px; font-weight:750; }
+  h2 .num { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
+    border-radius:10px; margin-right:12px; background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+    color:#fff; font-size:1rem; font-weight:800; vertical-align: middle; }
+  h3 { font-size:1.12rem; margin:28px 0 6px; }
+  p { margin:12px 0; } a { color: var(--blue); }
+  .lead { background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    padding:22px 26px; box-shadow: var(--shadow); margin-bottom:8px; }
+  .lead .legend { margin-top:10px; font-size:.92rem; color:var(--muted); }
+  .figure { background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding:22px; margin:22px 0 8px; overflow-x:auto; }
+  .mermaid { display:flex; justify-content:center; }
+  .figcap { color: var(--muted); font-size:.9rem; margin-top:12px; text-align:center; }
+  .note { border-radius:12px; padding:14px 18px; margin:14px 0; border:1px solid var(--line); }
+  .note .label { display:inline-block; font-size:.74rem; font-weight:800; letter-spacing:.4px;
+    padding:2px 9px; border-radius:6px; margin-bottom:6px; }
+  .plain { background:#fffdf6; border-color:#f3e3bd; } .plain .label { background: var(--accent); color:#fff; }
+  .eng { background: var(--blue-soft); border-color:#cfe0ff; } .eng .label { background: var(--blue); color:#fff; }
+  .warn { background:#fff7f9; border-color:#f6cdda; } .warn .label { background: var(--pink); color:#fff; }
+  table { width:100%; border-collapse: collapse; margin:18px 0; background:var(--card);
+    border:1px solid var(--line); border-radius: var(--radius); overflow:hidden; box-shadow: var(--shadow); }
+  th, td { text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); vertical-align: top; font-size:.94rem; }
+  th { background:#f1f4fa; font-weight:700; } tr:last-child td { border-bottom:none; }
+  td code, p code, li code { background:#eef1f7; padding:1px 6px; border-radius:6px; font-size:.88em; }
+  ul { margin:12px 0; padding-left:22px; } li { margin:7px 0; }
+  .pill { font-size:.7rem; font-weight:800; padding:2px 8px; border-radius:999px; color:#fff; white-space:nowrap; }
+  .pill.free { background: var(--green); } .pill.paid { background: var(--pink); }
+  .pill.v1 { background: var(--green); } .pill.future { background: var(--purple); }
+  hr { border:none; border-top:1px solid var(--line); margin:40px 0; }
+  footer { color:var(--muted); font-size:.88rem; text-align:center; margin-top:40px; }
+  nav.toc { background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding:16px 22px; margin-bottom:8px; }
+  nav.toc strong { display:block; font-size:.8rem; letter-spacing:.4px; color:var(--muted); margin-bottom:8px; }
+  nav.toc ol { margin:0; padding-left:20px; columns:2; } nav.toc a { text-decoration:none; } nav.toc a:hover { text-decoration:underline; }
+  @media (max-width:640px){ header.hero h1{font-size:1.8rem;} nav.toc ol{columns:1;} }
+  @media print { header.hero{background:#1b2440 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .figure,table,.lead,.note{box-shadow:none;} }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="langswitch"><a href="architecture.html">English</a><a class="active" href="architecture.zh.html">中文</a></div>
+  <div class="inner">
+    <div class="sun"><span class="dot"></span> InnerSun</div>
+    <h1>系统架构 (System Architecture)</h1>
+    <p class="tag">面向留学生的 AI 心理咨询助手。我们的<b>差异化并不在于 AI 模型本身 (differentiator)</b>——而在于一套自有的
+      <em>关怀模式 (Care Patterns)</em>知识库：由我们的研究员从真实临床案例中撰写、并以研究文献为依据的「特定学生情境 +
+      AI 应采用的治疗策略」。AI 在对话中实时检索并运用这些专业知识。AI 是「引流的钩子 (hook)」；商业目标是建立足够的信任，
+      让学生预约一位<b>真人咨询师 (human counselor)</b> 的面谈。</p>
+    <div class="badges">
+      <span class="badge">👩‍💻 面向工程师</span>
+      <span class="badge">📋 面向产品经理 (PM)</span>
+      <span class="badge">📈 面向投资人</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="lead">
+    知识库以<b>英文 (English)</b> 撰写（研究员与文献引用统一使用同一种语言），而助手会用<b>用户在界面上选择的语言回复</b>——
+    目前支持英文和简体中文，后续会增加更多语言。
+    <div class="legend"><i>每张图后都附有通俗解释与工程细节。</i><br/>
+      🟢 <b>精简版 v1 (Lean v1)</b>＝上线时构建的部分 &nbsp;·&nbsp; 🔵 <b>未来版 (Future / v2+)</b>＝在有了用户、
+      数据与收入之后再做。图中<b>实线</b>＝v1，<b>虚线</b>＝未来版。</div>
+  </div>
+
+  <nav class="toc">
+    <strong>目录 (Contents)</strong>
+    <ol>
+      <li><a href="#s1">整体架构 (Big Picture)</a></li>
+      <li><a href="#s2">对话流程 (Conversation Flow)</a></li>
+      <li><a href="#s3">关怀模式与检索 (RAG)</a></li>
+      <li><a href="#s4">预设答案 (FAQ)</a></li>
+      <li><a href="#s5">成本控制 (Cost Control)</a></li>
+      <li><a href="#s6">商业模式 (Monetization)</a></li>
+      <li><a href="#s7">护城河 (Defensibility)</a></li>
+      <li><a href="#s8">数据科学的定位 (Data Science)</a></li>
+      <li><a href="#s9">未来规划 (Future Plan)</a></li>
+      <li><a href="#s10">硬性约束 (Hard Constraints)</a></li>
+      <li><a href="#appendix">附录 (Appendices)</a></li>
+    </ol>
+  </nav>
+
+  <!-- ===== 1 ===== -->
+  <h2 id="s1"><span class="num">1</span>整体架构 (Big Picture)</h2>
+  <div class="figure"><pre class="mermaid">
+flowchart TD
+    subgraph Client["🖥️ 客户端 (Client) — React SPA (英文 / 中文)"]
+        UI["首页 · 聊天 · 登录<br/><i>浏览器中不含 API 密钥</i>"]
+        FAQ["常见问题快捷回复 (FAQ chips)<br/><i>→ 预设答案，不调用 LLM</i>"]
+    end
+    UI -->|HTTPS| API
+    subgraph Backend["⚙️ 后端 (Backend) — 编排 API (Orchestration API)"]
+        API["API 网关 + 鉴权<br/><i>登录可选</i>"]
+        ORCH["对话编排器 (Orchestrator)"]
+        SAFE["安全 / 危机检测 (Crisis Detection)"]
+        NUDGE["预约引导引擎<br/><i>意愿评分 (readiness score)</i>"]
+    end
+    API --> ORCH
+    ORCH --> SAFE
+    ORCH --> NUDGE
+    subgraph AI["🤖 AI 层 — OpenAI (按模型分级控本)"]
+        EMB["向量嵌入 (embeddings)<br/>text-embedding-3-small"]
+        CLASSIFY["分类 / 评估<br/>gpt-4o-mini"]
+        GEN["咨询回复<br/>gpt-4o"]
+    end
+    subgraph Data["🗄️ 数据层 — Postgres + pgvector"]
+        PG[("关怀模式 (Care Patterns) · 用户 · 记忆<br/>预约 · 预设答案")]
+    end
+    ORCH <--> EMB
+    ORCH <--> CLASSIFY
+    ORCH <--> GEN
+    ORCH <--> PG
+    subgraph Human["💳 真人漏斗 (Funnel) — 收入来源"]
+        BOOK["预约 / 排期 (Booking)"]
+    end
+    NUDGE --> BOOK
+    SEM["语义缓存 (semantic cache)"]:::future
+    CF["协同过滤 (collaborative filtering)<br/>相似用户学习"]:::future
+    PAY["支付 / 订阅 (Payments)"]:::future
+    FLY["自动化数据飞轮 (flywheel)<br/>建议新的关怀模式"]:::future
+    ORCH -.-> SEM
+    BOOK -.-> PAY
+    CF -.-> PG
+    PG -.-> FLY
+    FLY -.-> PG
+    classDef client fill:#fff3e0,stroke:#e08600,color:#5a3b00;
+    classDef backend fill:#eaf1ff,stroke:#2f6fed,color:#16306e;
+    classDef ai fill:#f1ecff,stroke:#7c4dff,color:#3d2b80;
+    classDef data fill:#e7f7f0,stroke:#1f9d6b,color:#0c4a32;
+    classDef human fill:#fdeef3,stroke:#d6336c,color:#7a1138;
+    classDef future stroke-dasharray:5 4,stroke:#7c4dff,fill:#faf7ff,color:#3d2b80;
+    class UI,FAQ client;
+    class API,ORCH,SAFE,NUDGE backend;
+    class EMB,CLASSIFY,GEN ai;
+    class PG data;
+    class BOOK human;
+  </pre><div class="figcap">图 1 — 端到端组件架构（实线＝v1，虚线＝未来版）。</div></div>
+
+  <div class="note plain"><span class="label">通俗解释</span><br/>
+    学生的浏览器只会与<em>我们自己的</em>后端通信，绝不直接连 OpenAI。后端（即「编排器 (Orchestrator)」）是大脑：它判断学生
+    需要什么，查出最合适的、由研究员撰写的指导（一条关怀模式），让 OpenAI 用这种风格写出一段温暖的回复，做安全检查，并决定
+    何时建议预约真人。AI「知道」的一切都存在我们的数据库里，由我们的研究员掌控。虚线部分留待日后。</div>
+
+  <div class="note eng"><span class="label">工程细节</span><br/>
+    编排器是一个轻量、无状态 (stateless) 的服务（Node 或 Python）。把 OpenAI 调用放在它背后同时带来三点好处：<b>安全</b>
+    （密钥不进入浏览器——目前的原型会泄露密钥，我们会在 v1 修复）、<b>成本可控</b>（集中做缓存、模型分级、Token 上限）、
+    以及<b>可移植性</b>（模型供应商藏在同一接口之后——「用 OpenAI」只是一项配置，而非锁定）。</div>
+
+  <!-- ===== 2 ===== -->
+  <h2 id="s2"><span class="num">2</span>对话流程 (Conversation Flow)</h2>
+  <p>登录 → 咨询 → 引导预约真人。</p>
+  <div class="figure"><pre class="mermaid">
+flowchart TD
+    Start(["用户到达"]) --> Q1{"是否已登录?"}
+    Q1 -->|"是 · 注册用户"| Reg["加载记忆 + 问卷 (questionnaire)<br/>→ 预置关怀模式匹配"]
+    Q1 -->|"否 · 匿名用户"| Anon["临时会话<br/>免费 · 即时 · 无记忆"]
+    Reg --> Chat["用户发送一条消息"]
+    Anon --> Chat
+    Chat --> FAQ{"是常见问题 /<br/>快捷回复吗?"}
+    FAQ -->|"是"| Canned["返回预设答案<br/>不调用 LLM · $0"]
+    FAQ -->|"否"| Signal{"信息是否足够<br/>进行(重新)匹配?"}
+    Signal -->|"否（例如只说 hi）"| GeneralEarly["通用共情回复"]
+    Signal -->|"是"| Retrieve["嵌入对话 →<br/>向量搜索: 前 N 条关怀模式"]
+    Retrieve --> Floor{"匹配分数 ≥<br/>相关性下限?"}
+    Floor -->|"否"| General["通用共情模式<br/>+ 标记: 关怀模式缺口"]
+    Floor -->|"是"| Strat["注入匹配到的<br/>关怀模式策略"]
+    GeneralEarly --> Build
+    General --> Build
+    Strat --> Build["组装提示词:<br/>系统提示 + 策略 + 历史"]
+    Build --> Gen["gpt-4o 生成回复"]
+    Gen --> SafetyChk{"危机 / 自伤信号?"}
+    SafetyChk -->|"是"| Crisis["危机资源 + 热线<br/>立即转接真人"]
+    SafetyChk -->|"否"| NudgeChk{"意愿评分 ≥ 阈值,<br/>或用户主动询问?"}
+    NudgeChk -->|"是"| Nudge["温和地建议预约<br/>一位真人咨询师"]
+    NudgeChk -->|"否"| Reply
+    Crisis --> Reply(["回复用户"])
+    Nudge --> Reply
+    Canned --> Reply
+    Reply --> LogStep["若已获同意则记录<br/><i>去标识化 (de-identified)</i>"]
+    classDef decision fill:#fff3e0,stroke:#e08600,color:#5a3b00;
+    classDef danger fill:#fdeef3,stroke:#d6336c,color:#7a1138;
+    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk decision;
+    class Crisis danger;
+  </pre><div class="figcap">图 2 — 单条消息的对话流程。</div></div>
+
+  <div class="note plain"><span class="label">通俗解释</span><br/>
+    任何人都能即时、匿名地开始——这就是「树洞 (tree hole)」的承诺，也是漏斗的顶端。<b>注册用户</b>不仅会被记住历史，还有先发
+    优势：注册问卷会在他们打出第一个字之前，就预置一个初始的关怀模式匹配。常见问题（例如「这是保密的吗?」）用预写好的文字回答，
+    完全不调用 AI。对于真正的倾诉，我们会悄悄地把学生匹配到研究员的案例，运用相应指导，写出关怀的回复，做安全检查——只有在信任
+    已建立时，才提及有真人咨询师可预约。</div>
+
+  <div class="note eng"><span class="label">工程细节</span><br/>
+    匹配是一个<em>持续进行 (running)</em> 的评估。对<b>匿名</b>用户，我们不会在第一句「hi」就匹配；而是等到有足够实质内容
+    （几条有实质内容的消息 / 一个较小的 token 阈值），再由<b>相关性下限 (relevance floor)</b> 决定是否真的套用某个模式。
+    对<b>注册</b>用户，问卷给出一个温暖的起点，再由对话逐步细化。危机检测是一条独立、更高优先级的通道——它绝不会引导
+    「下周预约」，而是立即给出即时资源。</div>
+
+  <!-- ===== 3 ===== -->
+  <h2 id="s3"><span class="num">3</span>关怀模式 — 存储、检索与冷启动 (RAG) 🟢</h2>
+  <div class="figure"><pre class="mermaid">
+flowchart LR
+    subgraph Authoring["✍️ 研究员 — 后台工具 (英文)"]
+        WRITE["撰写关怀模式<br/>情境 · 信号 · 策略<br/>· 禁忌 · 升级 · source_refs"]
+    end
+    WRITE -->|"保存时: 嵌入一次"| EMB1["text-embedding-3-small"]
+    EMB1 --> PGV[("Postgres + pgvector<br/>关怀模式记录 + 向量")]
+    subgraph Cold["🚀 冷启动 (Cold start)"]
+        Q["注册问卷<br/>(5–8 题)"] --> SEED["预置初始匹配"]
+        KW["匿名: 早期消息中<br/>信息已足够"] --> SEED
+    end
+    subgraph Runtime["⚡ 对话运行时"]
+        SEED --> SEARCH
+        CONV["进行中的对话<br/>(任意语言)"] --> NORM["将查询归一为英文<br/>gpt-4o-mini"]
+        NORM --> EMB2["嵌入 (已缓存)"]
+        EMB2 --> SEARCH["向量相似度搜索"]
+        PGV --> SEARCH
+        SEARCH --> TOPN["前 N 条关怀模式 + 分数"]
+    end
+    classDef author fill:#fff3e0,stroke:#e08600,color:#5a3b00;
+    classDef run fill:#eaf1ff,stroke:#2f6fed,color:#16306e;
+    classDef store fill:#e7f7f0,stroke:#1f9d6b,color:#0c4a32;
+    class WRITE,EMB1 author;
+    class CONV,NORM,EMB2,SEARCH,TOPN,Q,KW,SEED run;
+    class PGV store;
+  </pre><div class="figcap">图 3 — 一次撰写；对话时检索（并完成冷启动）。</div></div>
+
+  <p><b>关怀模式存在哪里：</b>带 <code>pgvector</code> 扩展的 <b>Postgres</b>。一个托管数据库
+    (Supabase / Neon / AWS RDS) 装下所有东西——模式文本、向量、用户、记忆、预约、预设答案——并具备真正的事务与统一备份。
+    以我们的规模无需单独的向量数据库 (Pinecone/Qdrant/Weaviate)；pgvector 可轻松应对数万条模式，日后若量级需要再迁移。</p>
+
+  <p><b>关怀模式字段 (schema, v1)：</b><code>id/title</code> · <code>situation</code>（情境，用于嵌入→匹配）·
+    <code>signals</code>（信号）· <code>strategies</code>（策略，→提示词）· <code>avoid</code>（禁忌）·
+    <code>escalation</code>（升级）· <code>source_refs</code>（研究文献引用）· <code>locale notes</code>。以<b>英文</b>撰写。</p>
+
+  <p><b>冷启动（两条入口）：</b></p>
+  <ul>
+    <li><b>注册用户 → 问卷。</b>注册时的 5–8 道简短、温和、以选择题为主的问题，在用户档案上为初始的前 N 匹配预置数据。
+      要可跳过、低门槛（每多一题都会流失注册）；心理健康问卷属于敏感数据，须获得同意 (consent)。</li>
+    <li><b>匿名用户 → 基于信号。</b>当早期消息有足够实质内容时尝试首次匹配；由相关性下限决定是否套用。（不是死板地「数够 5 个
+      关键词」这种门槛——关键词/主题抽取只是喂给匹配的一个信号，而非硬性触发。）</li>
+  </ul>
+
+  <div class="note eng"><span class="label">工程细节</span><br/>
+    一条模式的向量在保存时<b>计算一次</b>并与该行一同存储——对话时绝不重算。新增第 200 条模式是纯粹的内容工作，无需改代码。
+    检索即 <code>ORDER BY embedding &lt;=&gt; :query_vector LIMIT N</code>。</div>
+
+  <h3>匹配到底是怎么工作的</h3>
+  <div class="note plain"><span class="label">关键认知</span><br/>
+    对话模型<b>并不会</b>「读」历史然后「挑」一个关怀模式。匹配是<b>向量数学 (vector math)</b>，不是 LLM 的推理。</div>
+  <ol>
+    <li><b>构建紧凑的匹配查询</b>——用运行摘要 + 最近几条消息，并<b>归一为英文</b>。</li>
+    <li><b>做嵌入 (embed)</b>——<code>text-embedding-3-small</code> 把它变成约 1,536 个数字的向量。每条关怀模式的
+      <code>situation</code> 在保存时已用同样方式嵌入过一次。</li>
+    <li><b>向量搜索（即匹配）</b>——pgvector 用<b>余弦相似度 (cosine similarity)</b>（0–1）比较，返回带分数的前 N 条。此步无 LLM。</li>
+    <li><b>相关性下限（即闸门）</b>——最高分 ≥ 阈值 → 注入/融合这些策略；低于则进入通用共情模式并标记缺口。</li>
+    <li><b>每轮重复</b>——随对话展开重跑，使匹配逐渐收敛或切换。</li>
+  </ol>
+  <p><b>下限如何确定：</b>它不是一个凭空的常数——余弦相似度的绝对值与所用嵌入模型强相关，因此要<b>用数据来标定 (calibrate)</b>
+    （由研究员在样例对话上标注正确模式 → 选出最能区分「好/坏匹配」的阈值；先从 ~0.7–0.8 起步，再依线上日志调优）。
+    <code>gpt-4o-mini</code> 的「评估」步骤是补充（抽取信号；未来的<em>混合 (hybrid)</em> 方案会对向量前 10 条做重排序
+    (re-rank)）——但 v1 的匹配就是「嵌入 + 余弦」。</p>
+
+  <h3>语言：英文知识库，按用户语言回复</h3>
+  <ul>
+    <li><b>知识库＝英文</b>——统一的规范语言，与研究文献一致，模型在英文临床内容上表现最好；避免知识库出现翻译漂移。</li>
+    <li><b>回复跟随界面语言</b>——gpt-4o 是多语言的：它读英文策略，用英文或简体中文流畅作答（通过一句「用 {locale} 回复」的指令）。</li>
+    <li><b>跨语言匹配</b>——中文对话要匹配英文知识库。嵌入是多语言的，但跨语言召回较弱，因此在向量搜索前，我们用便宜的
+      gpt-4o-mini 把<b>匹配查询归一为英文</b>（英文→英文检索更可靠）。回复仍用用户的语言。</li>
+  </ul>
+
+  <h3>以研究文献为依据</h3>
+  <p>我们有一些研究论文与文章。它们的角色是刻意设计的：</p>
+  <ul>
+    <li>✅ <b>主要用途——论文是研究员提炼成关怀模式的原料</b>，并在 <code>source_refs</code> 中标注引用。每条策略都经过人工把关、
+      安全，且<b>可追溯到同行评审的研究</b>。</li>
+    <li>⚠️ <b>要避免——把论文原文经 RAG 直接塞进咨询回复。</b>学术文字是写给临床医生看的，直接检索会带来术语堆砌或误用结论——是安全隐患。</li>
+    <li>🔵 <b>未来——一个内部「研究文献库」</b>（把论文切块 + 嵌入）作为研究员撰写/检索的辅助与引用来源，而非面向用户的运行时来源。</li>
+  </ul>
+
+  <!-- ===== 4 ===== -->
+  <h2 id="s4"><span class="num">4</span>预设答案 (FAQ) — 直接存，不要缓存 🟢</h2>
+  <p>有些问题根本不需要 LLM：「这是保密的吗?」「怎么预约真人咨询师?」这些给出<b>预写好的双语答案</b>。</p>
+  <div class="note eng"><span class="label">为什么不用缓存</span><br/>
+    缓存 (cache) 存的是<em>昂贵的计算结果</em>以免重算；而预设答案是<em>人工撰写的常量</em>——没有可重算的东西，也就没什么可缓存的。直接存起来即可。</div>
+  <ul>
+    <li><b>v1 — 代码库里的 i18n / 配置文件。</b>有版本管理、零基础设施，直接并入英文/中文文案表。</li>
+    <li><b>之后 — 一张 <code>canned_responses</code> 数据表</b>，当非工程人员需要不发版就能改答案时再迁移。</li>
+  </ul>
+  <p><b>最佳体验：</b>做成<b>可点击的快捷回复气泡 (quick-reply chips)</b>——每个气泡确定性地映射到它的答案：不调用 LLM、无需匹配逻辑、零成本。</p>
+
+  <!-- ===== 5 ===== -->
+  <h2 id="s5"><span class="num">5</span>成本控制 (Cost Control) 🟢 <span style="font-weight:400;color:var(--muted);font-size:1rem;">（语义缓存 → 未来版）</span></h2>
+  <p>每次对话约 $0.05，随规模增长真正要看的是单位成本 (unit cost)。按影响力排序的手段：</p>
+  <table>
+    <thead><tr><th>手段</th><th>阶段</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>模型分级 (model tiering)</b></td><td><span class="pill v1">v1</span></td><td>用 <code>gpt-4o-mini</code> 做分类/安全/摘要；<code>gpt-4o</code> 只用于生成回复。<b>最大的杠杆。</b></td></tr>
+      <tr><td><b>历史摘要 (summarization)</b></td><td><span class="pill v1">v1</span></td><td>把较早的对话摘要化，而非每轮重发；完整历史会呈平方级增长。</td></tr>
+      <tr><td><b>提示词缓存 (prompt caching)</b></td><td><span class="pill v1">v1</span></td><td>OpenAI 对不变的系统提示前缀按折扣计费。几乎零成本即可启用。</td></tr>
+      <tr><td><b>Token 上限 + 限流</b></td><td><span class="pill v1">v1</span></td><td>限定 <code>max_tokens</code>；防滥用，避免免费额度被刷。</td></tr>
+      <tr><td><b>语义缓存 (semantic cache)</b></td><td><span class="pill future">未来</span></td><td>对重复的<em>常见问题</em>跳过模型调用。暂缓——对咨询帮助有限。<b>绝不</b>缓存个性化的情感回复。</td></tr>
+    </tbody>
+  </table>
+  <div class="note plain"><span class="label">参考数字</span><br/>
+    按 5 个用户 × 每天 1 次对话，一周约 <b>$1.8（含这些优化）对比 $2.6（不含提示词缓存）</b>。在此规模下绝对值很小；重点是
+    随规模放大时你要乘的那个 <b>~$0.05/次对话</b> 的单位成本。</div>
+
+  <!-- ===== 6 ===== -->
+  <h2 id="s6"><span class="num">6</span>商业模式 (Monetization)</h2>
+  <p><b>核心的「树洞」倾诉保持免费</b>——这是品牌承诺，也是漏斗顶端。把变现放在它<em>周围</em>。</p>
+  <table>
+    <thead><tr><th>层级</th><th>价格</th><th>能获得什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>匿名</b></td><td><span class="pill free">免费</span></td><td>即时 AI 聊天，无记忆，有限流。引流的钩子。</td></tr>
+      <tr><td><b>注册</b></td><td><span class="pill free">免费</span></td><td>记忆、问卷预置匹配、保存的洞察、每日额度。</td></tr>
+      <tr><td><b>订阅</b></td><td><span class="pill future">未来</span></td><td>无限 AI 聊天、更丰富的洞察、真人面谈的优先 + 折扣。</td></tr>
+      <tr><td><b>真人面谈</b></td><td><span class="pill paid">付费</span></td><td>预约真人咨询师——<b>核心收入。</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note plain"><span class="label">面向投资人的表述</span><br/>
+    AI 聊天有意作为<em>低毛利的获客 (lead generation)</em>——这正是成本手段重要的原因。真正的收入是<b>真人面谈的预约</b>
+    （高客单、可复购）。数据飞轮 (data flywheel) 会随时间不断加深护城河。</div>
+
+  <!-- ===== 7 ===== -->
+  <h2 id="s7"><span class="num">7</span>为什么有护城河 (Defensibility)</h2>
+  <ul>
+    <li><b>自有的临床知识库。</b>竞品都是套在同样公开模型外的薄壳 (prompt-wrapper)；我们由研究员撰写、以真实案例为依据的关怀模式，
+      是模型不具备、竞品也复制不了的内容。</li>
+    <li><b>可编辑、可追溯。</b>专业知识存在数据库里（RAG），而非固化进模型权重（微调 fine-tuning）——研究员改一行即刻生效，
+      且每条回复都能追溯到经审核的来源材料。</li>
+    <li><b>不断复利的数据飞轮。</b>真实的（已获同意、去标识化的）对话会揭示接下来该撰写哪些案例。</li>
+  </ul>
+
+  <!-- ===== 8 ===== -->
+  <h2 id="s8"><span class="num">8</span>数据科学与大数据的定位 (Data Science)</h2>
+  <div class="note plain"><span class="label">核心观点</span><br/>
+    做核心匹配<b>不需要</b>预测型的大数据模型。电商推荐系统是从数百万用户的<b>间接行为</b>（点击、购买）中<em>预测</em>隐藏意图
+    （需要大数据，且有冷启动问题）。我们的匹配是<b>基于内容的 (content-based)</b>：学生用文字<em>直接说出</em>问题，所以匹配是
+    「理解 + 路由」到研究员撰写的知识库——从<b>第 1 位用户</b>起就能用，研究员的知识库替代了对数据网络效应 (data-network effect)
+    的依赖。电商那种预测模型对应到我们的<b>未来版</b>协同过滤层：是锦上添花，而非地基。</div>
+  <p>所以数据科学家的价值分两个阶段：<b>v1＝搭建 + 分析（几乎不需要数据）</b>，而这正是<em>解锁</em><b>未来＝训练模型（需要积累的数据）</b>的前提。</p>
+  <table>
+    <thead><tr><th>#</th><th>机会点</th><th>产出</th><th>数据</th><th>模型 / 分析</th><th>阶段</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>日志 + 标注流水线</b></td><td>已获同意、去标识化的采集，便于日后标注</td><td>无</td><td>数据工程</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>2</td><td><b>评估框架与指标</b></td><td>定义「好匹配」(precision@k) + 基准集</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>3</td><td><b>相关性下限标定</b></td><td>用标注数据选出余弦阈值</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>4</td><td><b>产品与漏斗分析</b></td><td>访问量、语言、议题类型、转化</td><td>极少</td><td>分析 / BI</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>5</td><td><b>关怀模式缺口分析</b></td><td>找出没有合适模式的情境</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>6</td><td><b>危机检测评估</b></td><td>衡量安全层的召回率</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>7</td><td><b>重排序器 / 交叉编码器 (re-ranker)</b></td><td>在检索之上训练模型，胜过纯余弦</td><td>中–大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>8</td><td><b>微调领域嵌入</b></td><td>更好的中英临床相似度</td><td>大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>9</td><td><b>危机/风险分类器（训练）</b></td><td>专门构建的安全模型</td><td>中</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>10</td><td><b>信号抽取</b>（严重度、情绪）</td><td>用于引导匹配与推动的标签</td><td>中</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>11</td><td><b>自动缺口聚类</b></td><td>对未匹配对话聚类 → 建议新模式</td><td>中</td><td>无监督 ML</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>12</td><td><b>协同过滤 / 推荐系统</b></td><td>「与此类似的学生对 A 反应更好」</td><td>大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>13</td><td><b>预约转化预测</b></td><td>谁更可能预约真人 → 更聪明的推动时机</td><td>中–大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>14</td><td><b>流失预测</b></td><td>标记正在流失的用户</td><td>中–大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>15</td><td><b>策略-效果优化</b></td><td>用 A/B 测试与老虎机 (bandits) 检验策略</td><td>大</td><td>实验</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>16</td><td><b>疗效建模</b></td><td>产品是否真的有帮助?</td><td>大</td><td>研究</td><td><span class="pill future">未来</span></td></tr>
+      <tr><td>17</td><td><b>语气/风格微调</b></td><td>更便宜的小模型贴合我们的语气</td><td>大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
+    </tbody>
+  </table>
+  <div class="note warn"><span class="label">关于我们的真实医疗案例</span><br/>
+    真实医疗案例属于<b>知识数据 (knowledge data)</b>——非常适合用来撰写模式、构建评估集与标定（因此数据科学家能更早介入）。
+    但它们<b>训练不了</b><em>预测型</em>模型（那需要上线后的行为数据），而且——最关键——它们是<b>受保护健康信息 (PHI)</b>：
+    在任何流水线接触之前必须去标识化，且<b>绝不可把原始案例做成面向用户的检索索引</b>。安全路径是：案例 → 研究员提炼 →
+    去标识化的关怀模式 → RAG。</div>
+  <p><b>节奏建议：</b>规模很小时不要招数据科学家（没有可训练的数据）。把第 1–2 项做进 v1，让干净的数据等在那里。之后先从评估、
+    标定和危机分类器入手，再进阶到训练型的匹配/推荐模型。<b>上线永远不会被机器学习卡住。</b></p>
+
+  <!-- ===== 9 ===== -->
+  <h2 id="s9"><span class="num">9</span>未来规划 (Future Plan, v2+) 🔵</h2>
+  <ul>
+    <li><b>语义缓存</b>——对重复的常见问题跳过 LLM（仅限 FAQ；绝不用于个性化回复）。</li>
+    <li><b>协同过滤（相似用户的智慧，"wisdom of similar users"）。</b>幼稚做法「拿用户 A 的回复去答 B」不安全（泄露隐私；临床上有风险）。<b>安全做法：</b>让学习<b>流经关怀模式层</b>——
+      挖掘相似用户的成功对话 → 去标识化的聚合规律 → 研究员审核 → 更新模式。用相似用户去推断新用户的模式，则是低风险的冷启动加速器。</li>
+    <li><b>自动化飞轮</b>——自动聚类低匹配对话并建议新的关怀模式。</li>
+    <li><b>语气/风格微调</b>——在积累数千条高质量对话后，微调一个更小的模型只负责语气（知识仍在 RAG）。</li>
+    <li><b>订阅与支付</b>、<b>进阶记忆</b>、<b>加权意愿评分</b>。</li>
+  </ul>
+
+  <!-- ===== 10 ===== -->
+  <h2 id="s10"><span class="num">10</span>硬性约束 (Hard Constraints)</h2>
+  <ul>
+    <li><b>隐私与同意。</b>敏感的心理健康数据，且很多来自中国公民。匿名日志需要清晰的告知；用对话来撰写模式需要单独、明确的同意
+      + 在任何人工查看前完成去标识化。中国的 <b>PIPL</b>（尤其跨境传输）、<b>GDPR</b> 及特殊类别数据规则都适用——
+      <b>在数据飞轮或协同过滤运行前，必须获得法务放行。</b>从第一天起就设计好同意与日志。</li>
+    <li><b>安全。</b>带真实升级路径与资源的危机/自伤检测不是可选项。</li>
+    <li><b>不是医疗器械。</b>AI 提供支持与应对策略，绝不做诊断——超出其能力范围就转给真人。</li>
+  </ul>
+
+  <hr/>
+
+  <h2 id="appendix"><span class="num">★</span>附录 (Appendices)</h2>
+  <h3>精简版 v1 与未来版一览</h3>
+  <table>
+    <thead><tr><th>能力</th><th>v1 🟢</th><th>未来 🔵</th></tr></thead>
+    <tbody>
+      <tr><td>编排器、服务端密钥</td><td>✅</td><td></td></tr>
+      <tr><td>gpt-4o 回复 + gpt-4o-mini（分类/安全/摘要）</td><td>✅</td><td></td></tr>
+      <tr><td>Postgres + pgvector、关怀模式检索 + 相关性下限</td><td>✅</td><td></td></tr>
+      <tr><td>提示词缓存、模型分级、摘要</td><td>✅</td><td></td></tr>
+      <tr><td>英文知识库 + 按用户语言回复 + 查询归一为英文</td><td>✅</td><td></td></tr>
+      <tr><td>论文 → 关怀模式，带 <code>source_refs</code></td><td>✅</td><td></td></tr>
+      <tr><td>硬编码 FAQ / 快捷回复气泡</td><td>✅</td><td></td></tr>
+      <tr><td>注册问卷 → 初始匹配</td><td>✅</td><td></td></tr>
+      <tr><td>匿名用户的基于信号匹配</td><td>✅</td><td></td></tr>
+      <tr><td>安全/危机 + 预约推动（规则式）+ 同意/日志</td><td>✅</td><td></td></tr>
+      <tr><td>数据科学：日志/标注、评估框架、下限标定、分析</td><td>✅</td><td></td></tr>
+      <tr><td>语义缓存</td><td></td><td>🔵</td></tr>
+      <tr><td>协同过滤（经关怀模式层）</td><td></td><td>🔵</td></tr>
+      <tr><td>自动化飞轮、语气微调</td><td></td><td>🔵</td></tr>
+      <tr><td>内部研究文献库（供撰写用的论文 RAG）</td><td></td><td>🔵</td></tr>
+      <tr><td>数据科学：训练型重排序器/分类器/推荐/疗效模型</td><td></td><td>🔵</td></tr>
+      <tr><td>订阅/支付、进阶记忆、加权意愿评分</td><td></td><td>🔵</td></tr>
+    </tbody>
+  </table>
+
+  <h3>建议技术栈 (Reference Stack)</h3>
+  <table>
+    <thead><tr><th>层</th><th>选型</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr><td>客户端</td><td>React SPA + i18n（英文/中文，可扩展）</td><td>沿用现有原型；后续增加更多语言</td></tr>
+      <tr><td>后端</td><td>Node 或 Python 编排 API</td><td>密钥留在服务端；供应商可替换</td></tr>
+      <tr><td>模型</td><td>OpenAI：gpt-4o（回复）、gpt-4o-mini（分类/安全/摘要）、text-embedding-3-small</td><td>按你的选择；分级控本</td></tr>
+      <tr><td>存储</td><td>Postgres + pgvector</td><td>关系型 + 向量一体存储</td></tr>
+      <tr><td>漏斗</td><td>排期 + 支付（如 Stripe）</td><td>真人预约＝收入</td></tr>
+    </tbody>
+  </table>
+
+  <footer>InnerSun — 系统架构 · 图表由 Mermaid.js 实时渲染</footer>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true, securityLevel: 'loose', theme: 'base',
+    themeVariables: {
+      fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontSize: '15px', lineColor: '#9aa6bd', primaryColor: '#eef2ff',
+      primaryBorderColor: '#6366f1', primaryTextColor: '#1f2933'
+    },
+    flowchart: { curve: 'basis', htmlLabels: true, padding: 14, nodeSpacing: 55, rankSpacing: 62, useMaxWidth: true }
+  });
+</script>
+</body>
+</html>

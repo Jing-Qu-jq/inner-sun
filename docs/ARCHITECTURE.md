@@ -363,6 +363,12 @@ what *unlocks* the **Future = trained models (need accumulated data)**.
 | 16 | **Outcome / efficacy modeling** | Does the product actually help? Clinical-outcome measurement | large + longitudinal | research/stats | 🔵 Future |
 | 17 | **Voice/style fine-tuning** | Cheaper small model matches InnerSun tone (knowledge stays in RAG) | large | **trained model** | 🔵 Future |
 
+> **On our medical cases.** Real medical cases are *knowledge data* — great for authoring, an evaluation set,
+> and calibration (so a data scientist can start sooner). But they don't train the *predictive* models (those
+> need live behavioral data), and — critically — they're **PHI**: de-identify before any pipeline touches them,
+> and **never index raw cases for user-facing retrieval**. Safe path: cases → researchers distill →
+> de-identified Care Patterns → RAG.
+
 **Sequencing:** don't hire a data scientist at tiny scale — there's no data to train on, and the gating
 resource is the Care-Pattern library + users. But build items **1–2 into v1** so clean, labelable data is
 waiting. Then a DS starts with evaluation, calibration, and the crisis classifier before graduating to the
