@@ -1,0 +1,26 @@
+{
+  "name": "@innersun/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "InnerSun backend orchestrator (Fastify + TypeScript). Owns all OpenAI calls.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@innersun/shared": "*",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.14",
+    "pino-pretty": "^11.2.2",
+    "tsx": "^4.16.5",
+    "typescript": "^5.5.4"
+  }
+}

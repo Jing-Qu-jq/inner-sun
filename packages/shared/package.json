@@ -1,0 +1,19 @@
+{
+  "name": "@innersun/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript types across the InnerSun web and api workspaces.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

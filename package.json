@@ -1,49 +1,23 @@
 {
-  "homepage": "https://jing-qu-jq.github.io/inner-sun",
-  "name": "inner-sun",
+  "name": "innersun",
   "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "@splidejs/react-splide": "^0.7.12",
-    "@testing-library/jest-dom": "^5.17.0",
-    "@testing-library/react": "^13.4.0",
-    "@testing-library/user-event": "^13.5.0",
-    "bootstrap": "^5.3.3",
-    "lodash": "^4.17.15",
-    "react": "^18.2.0",
-    "react-bootstrap": "^1.6.8",
-    "react-chat-elements": "^12.0.18",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1"
-  },
+  "description": "InnerSun — AI counseling chat for international students. Monorepo (web + api + shared + db).",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d build"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "dev": "npm run build:shared && concurrently -n web,api -c blue,green \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run start --workspace @innersun/web",
+    "dev:api": "npm run dev --workspace @innersun/api",
+    "build:shared": "npm run build --workspace @innersun/shared",
+    "build:web": "npm run build --workspace @innersun/web",
+    "build:api": "npm run build:shared && npm run build --workspace @innersun/api",
+    "deploy:web": "npm run deploy --workspace @innersun/web"
   },
   "devDependencies": {
-    "gh-pages": "^6.3.0",
-    "react-router-dom": "^6.22.1"
+    "concurrently": "^8.2.2"
   }
 }
