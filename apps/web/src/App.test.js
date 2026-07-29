@@ -11,6 +11,10 @@ jest.mock('@splidejs/react-splide', () => ({
     SplideSlide: ({ children }) => <div>{children}</div>,
 }));
 
+// The real world map (react-simple-maps + topojson) is heavy and irrelevant to
+// the smoke test; stub it out.
+jest.mock('./components/ConnectionMap', () => () => <div data-testid="connection-map" />);
+
 test('renders the InnerSun app shell', () => {
     render(<App />);
 

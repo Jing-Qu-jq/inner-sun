@@ -34,17 +34,26 @@ Turn the single-folder prototype into a monorepo the backend can live in, runnab
 5. `npm run dev` starts the web app and the API locally; both boot with no errors.
 6. Existing GitHub Pages build for `apps/web` still works (prototype stays publishable).
 
-## Feature 2: Clean up the current UI & fix known prototype bugs 🟢
+## Feature 2: Clean up the current UI & fix known prototype bugs ✅ (done)
 Make the existing UI presentable and correct before wiring real logic behind it.
 **Depends on:** Feature 1.
-**AC:**
-1. Remove placeholder content ("This is some text within a card body.") and dead nav links (e.g. "Meet Our Team" with no target).
-2. Fix the chat message state bug (messages are appended immutably; rapid sends don't drop/overwrite messages).
-3. The leftover CarClarity/automotive `chatPrompt.md` has been **repurposed** into `services/api/src/prompts/system-prompt.md` as InnerSun's system prompt (done in Feature 1) — verify no automotive/CarClarity content remains anywhere in `apps/web`.
-4. Home page renders hero + team carousel cleanly; the placeholder profile photo and example team data are clearly marked as sample content.
-5. No console errors on Home or Chat pages.
-6. Replace the placeholder `apps/web/src/App.test.js` (default CRA `/learn react/i` test — currently fails against this app) with a real smoke test.
-7. Add the missing `apps/web/public/favicon.ico` (referenced by `index.html` but absent).
+**AC (all met):**
+1. ✅ Removed placeholder content ("This is some text within a card body.") and the dead "Meet Our Team" nav link (later re-added as a *working* scroll link — see below).
+2. ✅ Fixed the chat message-state bug: messages append immutably via functional `setState`, and each send's own placeholder is replaced by a stable id — correct under rapid/overlapping and out-of-order replies (covered by `components/Chat/index.test.js`).
+3. ✅ Verified no CarClarity/automotive content remains anywhere in `apps/web` (the old prompt was repurposed into `services/api/src/prompts/system-prompt.md` in Feature 1).
+4. ✅ Home renders hero + team carousel cleanly; the carousel is clearly marked *sample content* (section note + per-card "Sample" badge + sample-marked photo alt text).
+5. ✅ No console errors on Home or Chat (verified in a real browser via the DevTools Protocol: 0 runtime errors, EN and 中文).
+6. ✅ Replaced the default CRA `/learn react/i` test with real smoke tests (`App.test.js`) plus the Chat rapid-send test.
+7. ✅ Added `apps/web/public/favicon.ico` (generated from the logo) and referenced it in `index.html`.
+
+**Also delivered in this feature (scope grew during review):**
+- **react-bootstrap 1.6.8 → 2.10.10** — aligned the component library with the Bootstrap 5 CSS the app already ships (fixed API drift like `<Badge bg=…>`).
+- **Working "Meet Our Team" nav** — smooth-scroll to the team section; works cross-route (from `/chatPage` it navigates home via router state, then scrolls).
+- **Home-page build-out** so the section nav has real content: refreshed hero (gradient scrim, sun-accent CTAs, swappable `hero_image.png`), **How it works** (3 steps), **Why InnerSun** (value cards), a **Trust & safety** strip (incl. not-a-medical-device + crisis note), and a closing **CTA band**. *(Overlaps the eventual Feature 18 polish; the final trust/team copy + responsive pass still lands there.)*
+- **China ↔ US ConnectionMap section** — a **real** world map (`react-simple-maps` + `world-atlas`) with the US and China "lit up" and a connecting arc; data-driven (`HIGHLIGHTED` map) so more countries light up with a one-line change.
+- **Warm "inner sun" palette** — coordinated the whole page: warm-charcoal header/footer/trust strip, Bootstrap `primary` recolored to the sun accent, cream sections. Styling leans on Bootstrap 5 utilities with only a tiny custom layer (brand tokens, gradients, hero scrim, icon badge, map keyframes).
+- **Icon system** — `react-bootstrap-icons` + a reusable `IconBadge` (circular badges) replacing emoji in the value cards and trust strip.
+- **Lightweight i18n (EN / 简体中文)** — `src/i18n/` context + dictionaries; the header Language toggle switches the whole UI and persists via `localStorage`; adding a locale = one new dictionary. *(This front-runs the UI-string part of Feature 15; the AI **reply** localization stays server-side and is still owned by Feature 15.)*
 
 ## Feature 3: Database setup — PostgreSQL + pgvector 🟢
 Stand up the single data store for everything (relational + vectors).

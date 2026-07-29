@@ -13,12 +13,14 @@ import ValueProps from '../components/ValueProps';
 import ConnectionMap from '../components/ConnectionMap';
 import TrustStrip from '../components/TrustStrip';
 import CtaBand from '../components/CtaBand';
+import { useI18n } from '../i18n';
 
 const scrollToTeam = () => {
     document.getElementById('team')?.scrollIntoView({ behavior: 'smooth' });
 };
 
 const HomePage = () => {
+    const { t } = useI18n();
     const location = useLocation();
 
     // Support deep-linking to a section from another route (e.g. the header's
@@ -26,7 +28,6 @@ const HomePage = () => {
     useEffect(() => {
         const target = location.state?.scrollTo;
         if (target) {
-            // Wait a tick so the section has mounted before scrolling.
             const id = window.setTimeout(() => {
                 document.getElementById(target)?.scrollIntoView({ behavior: 'smooth' });
             }, 0);
@@ -37,21 +38,18 @@ const HomePage = () => {
 
     return (
         <>
-            <div className="hero-section position-relative">
+            <div className="position-relative">
                 <Image src={heroImage} className="hero-image w-100" alt="" />
                 <div className="hero-overlay" />
-                <div className="hero-content position-absolute top-50 start-50 translate-middle text-white text-center">
-                    <h1>You’re not alone — wherever home is</h1>
-                    <p className="hero-lead">
-                        Warm, culturally-aware emotional support for international students.
-                        Anonymous, secure, and here whenever you need it — in English or 中文.
-                    </p>
-                    <div className="hero-cta d-flex gap-3 justify-content-center flex-wrap mt-4">
-                        <Button as={Link} to="/chatPage" variant="primary" size="lg">
-                            Start chatting
+                <div className="hero-content position-absolute top-50 start-50 translate-middle text-white text-center px-3" style={{ maxWidth: '780px', zIndex: 1 }}>
+                    <h1>{t('hero.title')}</h1>
+                    <p className="hero-lead">{t('hero.lead')}</p>
+                    <div className="d-flex gap-3 justify-content-center flex-wrap mt-4">
+                        <Button as={Link} to="/chatPage" variant="primary" size="lg" className="rounded-pill fw-semibold px-4">
+                            {t('hero.ctaChat')}
                         </Button>
-                        <Button variant="outline-light" size="lg" onClick={scrollToTeam}>
-                            Meet our counselors
+                        <Button variant="outline-light" size="lg" className="rounded-pill fw-semibold px-4" onClick={scrollToTeam}>
+                            {t('hero.ctaCounselors')}
                         </Button>
                     </div>
                 </div>
@@ -61,13 +59,12 @@ const HomePage = () => {
 
             <ValueProps />
 
-            <section className="section">
+            <section className="py-5">
                 <Container>
                     <div className="text-center mb-5">
-                        <h2 className="section-title">Bridging home and here</h2>
-                        <p className="section-subtitle">
-                            From campuses across the U.S. to families back in China and beyond —
-                            InnerSun keeps you connected to support that feels like home.
+                        <h2 className="fw-bold">{t('map.title')}</h2>
+                        <p className="text-secondary mx-auto mb-0" style={{ maxWidth: '660px' }}>
+                            {t('map.subtitle')}
                         </p>
                     </div>
                     <ConnectionMap />
@@ -76,13 +73,12 @@ const HomePage = () => {
 
             <TrustStrip />
 
-            <section id="team" className="section section-alt">
+            <section id="team" className="py-5 bg-cream">
                 <Container>
                     <div className="text-center mb-4">
-                        <h2 className="section-title">Meet Our Team</h2>
-                        <p className="section-subtitle mb-0">
-                            Sample content — placeholder profiles and photos shown for preview.
-                            Real team members are coming soon.
+                        <h2 className="fw-bold">{t('team.title')}</h2>
+                        <p className="text-secondary mx-auto mb-0" style={{ maxWidth: '660px' }}>
+                            {t('team.sample')}
                         </p>
                     </div>
                     <Splide

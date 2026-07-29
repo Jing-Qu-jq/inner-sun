@@ -2,42 +2,39 @@ import React from 'react';
 import Container from 'react-bootstrap/Container';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
+import { useI18n } from '../../i18n';
 
-const STEPS = [
-    {
-        title: 'Share what’s on your mind',
-        body: 'Start a private conversation — no sign-up needed. Chat anonymously, anytime, in the language you’re most comfortable with.',
-    },
-    {
-        title: 'We understand your world',
-        body: 'InnerSun draws on guidance from researchers who study international-student wellbeing, and responds with warmth and cultural awareness.',
-    },
-    {
-        title: 'Connect with a real counselor',
-        body: 'When you’re ready, we help you reach a human counselor who understands the experience of studying far from home.',
-    },
-];
+const HowItWorks = () => {
+    const { t } = useI18n();
+    const steps = [
+        { title: t('how.s1.title'), body: t('how.s1.body') },
+        { title: t('how.s2.title'), body: t('how.s2.body') },
+        { title: t('how.s3.title'), body: t('how.s3.body') },
+    ];
 
-const HowItWorks = () => (
-    <section className="section">
-        <Container>
-            <div className="text-center mb-5">
-                <h2 className="section-title">How it works</h2>
-                <p className="section-subtitle">
-                    Support in three simple steps — from your first message to talking with a real person.
-                </p>
-            </div>
-            <Row className="g-4">
-                {STEPS.map((step, i) => (
-                    <Col md={4} key={step.title} className="text-center">
-                        <div className="step-number">{i + 1}</div>
-                        <h5 className="fw-semibold">{step.title}</h5>
-                        <p className="text-body-secondary mb-0">{step.body}</p>
-                    </Col>
-                ))}
-            </Row>
-        </Container>
-    </section>
-);
+    return (
+        <section className="py-5">
+            <Container>
+                <div className="text-center mb-5">
+                    <h2 className="fw-bold">{t('how.title')}</h2>
+                    <p className="text-secondary mx-auto mb-0" style={{ maxWidth: '660px' }}>
+                        {t('how.subtitle')}
+                    </p>
+                </div>
+                <Row className="g-4">
+                    {steps.map((step, i) => (
+                        <Col md={4} key={step.title} className="text-center">
+                            <span className="icon-badge icon-badge-gradient fs-4 fw-bold mb-3">
+                                {i + 1}
+                            </span>
+                            <h5 className="fw-semibold">{step.title}</h5>
+                            <p className="text-secondary mb-0">{step.body}</p>
+                        </Col>
+                    ))}
+                </Row>
+            </Container>
+        </section>
+    );
+};
 
 export default HowItWorks;

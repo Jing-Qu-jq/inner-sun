@@ -8,6 +8,7 @@ import Form from 'react-bootstrap/Form';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 import ConversationFetcher from '../../fetchers/ConversationFetcher';
+import { useI18n } from '../../i18n';
 
 // Monotonic counter for stable, unique message ids so the pending
 // placeholder for each send can be located and replaced independently
@@ -19,6 +20,7 @@ const nextMessageId = () => {
 };
 
 function Chat() {
+    const { t } = useI18n();
     const messageListReference = React.createRef();
 
     const [chatMode, setChatMode] = useState(false);
@@ -78,13 +80,13 @@ function Chat() {
                     />
                 </div>
             )}
-            { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">What can I help you with?</h1>) }
+            { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">{t('chat.heading')}</h1>) }
             <div className="position-relative">
                 <Form.Control
                     style={{borderRadius: '25px'}}
                     type="text"
                     value={question}
-                    placeholder="Message InnerSun"
+                    placeholder={t('chat.placeholder')}
                     onChange={(e) => {
                         setQuestion(e.target.value);
                     }}

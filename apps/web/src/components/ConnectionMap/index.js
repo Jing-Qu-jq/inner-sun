@@ -1,85 +1,97 @@
 import React from 'react';
+import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
+import { geoEqualEarth } from 'd3-geo';
+import worldData from 'world-atlas/countries-110m.json';
+import { useI18n } from '../../i18n';
 
-// The great-circle-ish arc connecting the two points. Shared by the drawn
-// line and the traveling pulse so they follow exactly the same path.
-const ARC_PATH = 'M 215 205 C 400 35 560 25 705 170';
-const US = { x: 215, y: 205 };
-const CN = { x: 705, y: 170 };
+// Countries to "light up". Add an entry here to highlight another country as
+// InnerSun expands — keyed by the world-atlas `properties.name`.
+const HIGHLIGHTED = {
+    'United States of America': { coordinates: [-98, 39], labelKey: 'map.node.us', flag: '🇺🇸' },
+    China: { coordinates: [104, 35.5], labelKey: 'map.node.cn', flag: '🇨🇳' },
+};
 
-// A faint dot field for map-like texture, generated once at module load.
-const DOTS = [];
-for (let y = 45; y <= 335; y += 24) {
-    for (let x = 40; x <= 880; x += 24) {
-        DOTS.push({ x, y });
-    }
-}
+// Keep these in sync with <ComposableMap> below so the hand-drawn arc lines up
+// with the projected country markers.
+const WIDTH = 800;
+const HEIGHT = 440;
+const PROJECTION = geoEqualEarth()
+    .scale(150)
+    .center([10, 25])
+    .translate([WIDTH / 2, HEIGHT / 2]);
 
-const ConnectionMap = () => (
-    <svg
-        className="connection-map"
-        viewBox="0 0 920 380"
-        role="img"
-        aria-label="A map connecting the United States and China, representing the bridge between where international students study and home."
-    >
-        <defs>
-            <linearGradient id="arcGradient" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#ff9a4d" />
-                <stop offset="100%" stopColor="#ffd28a" />
-            </linearGradient>
-            <radialGradient id="nodeGradient" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#ffd28a" />
-                <stop offset="100%" stopColor="#ff9a4d" />
-            </radialGradient>
-        </defs>
+const SUN = '#ff9a4d';
+const LAND = '#e7ded1';
+const LAND_STROKE = '#d8ccb8';
 
-        {/* dotted texture */}
-        <g fill="#d7d2c8" opacity="0.5">
-            {DOTS.map((d) => (
-                <circle key={`${d.x}-${d.y}`} cx={d.x} cy={d.y} r="1.6" />
-            ))}
-        </g>
+const ConnectionMap = () => {
+    const { t } = useI18n();
+    const nodes = Object.values(HIGHLIGHTED);
 
-        {/* abstract landmasses behind each node */}
-        <ellipse cx={US.x} cy={US.y} rx="120" ry="74" fill="#e9c9a3" opacity="0.35" />
-        <ellipse cx={CN.x} cy={CN.y} rx="132" ry="80" fill="#e9c9a3" opacity="0.35" />
+    // A gentle quadratic arc between the two points that stays on the map
+    // (a true geodesic would wrap over the pole and off the top edge).
+    const [ux, uy] = PROJECTION(HIGHLIGHTED['United States of America'].coordinates);
+    const [cx, cy] = PROJECTION(HIGHLIGHTED.China.coordinates);
+    const ctrlX = (ux + cx) / 2;
+    const ctrlY = Math.min(uy, cy) - 120;
+    const arc = `M ${ux} ${uy} Q ${ctrlX} ${ctrlY} ${cx} ${cy}`;
 
-        {/* connection arc */}
-        <path
-            className="map-arc"
-            d={ARC_PATH}
-            fill="none"
-            stroke="url(#arcGradient)"
-            strokeWidth="3"
-            strokeLinecap="round"
-        />
+    return (
+        <div className="mx-auto" style={{ maxWidth: '960px' }}>
+            <ComposableMap
+                width={WIDTH}
+                height={HEIGHT}
+                projection="geoEqualEarth"
+                projectionConfig={{ scale: 150, center: [10, 25] }}
+                style={{ width: '100%', height: 'auto' }}
+                aria-label="A world map with the United States and China highlighted and connected, representing the bridge between where international students study and home."
+                role="img"
+            >
+                <Geographies geography={worldData}>
+                    {({ geographies }) =>
+                        geographies.map((geo) => {
+                            const highlighted = HIGHLIGHTED[geo.properties.name];
+                            return (
+                                <Geography
+                                    key={geo.rsmKey}
+                                    geography={geo}
+                                    fill={highlighted ? SUN : LAND}
+                                    stroke={highlighted ? '#f2892f' : LAND_STROKE}
+                                    strokeWidth={0.4}
+                                    style={{
+                                        default: { outline: 'none' },
+                                        hover: { outline: 'none', fill: highlighted ? '#f2892f' : '#ded4c4' },
+                                        pressed: { outline: 'none' },
+                                    }}
+                                />
+                            );
+                        })
+                    }
+                </Geographies>
 
-        {/* pulse traveling from home to campus */}
-        <circle r="5" fill="#ff8c42">
-            <animateMotion dur="6s" repeatCount="indefinite" path={ARC_PATH} />
-        </circle>
+                {/* connection arc + a pulse travelling from home to campus */}
+                <path className="map-arc" d={arc} fill="none" stroke={SUN} strokeWidth={2.5} strokeLinecap="round" />
+                <circle r={4.5} fill="#ff8c42">
+                    <animateMotion dur="6s" repeatCount="indefinite" path={arc} />
+                </circle>
 
-        {/* nodes */}
-        {[US, CN].map((n, i) => (
-            <g key={i}>
-                <circle
-                    className="map-node-halo"
-                    cx={n.x}
-                    cy={n.y}
-                    r="16"
-                    fill="#ff9a4d"
-                />
-                <circle cx={n.x} cy={n.y} r="9" fill="url(#nodeGradient)" stroke="#fff" strokeWidth="2" />
-            </g>
-        ))}
-
-        {/* labels */}
-        <text x={US.x} y={US.y + 46} textAnchor="middle" fontSize="18" fill="#2b2d42" fontWeight="600">
-            🇺🇸 United States
-        </text>
-        <text x={CN.x} y={CN.y + 46} textAnchor="middle" fontSize="18" fill="#2b2d42" fontWeight="600">
-            🇨🇳 中国 · China
-        </text>
-    </svg>
-);
+                {nodes.map((node) => (
+                    <Marker key={node.labelKey} coordinates={node.coordinates}>
+                        <circle r={11} className="map-node-halo" fill={SUN} />
+                        <circle r={5} fill={SUN} stroke="#fff" strokeWidth={1.5} />
+                        <text
+                            textAnchor="middle"
+                            y={-16}
+                            style={{ fontFamily: 'inherit', fontWeight: 600, fill: '#2b2622' }}
+                            fontSize={13}
+                        >
+                            {node.flag} {t(node.labelKey)}
+                        </text>
+                    </Marker>
+                ))}
+            </ComposableMap>
+        </div>
+    );
+};
 
 export default ConnectionMap;
