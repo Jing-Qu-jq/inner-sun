@@ -5,14 +5,22 @@ import 'react-chat-elements/dist/main.css';
 
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
-import Card from 'react-bootstrap/Card';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 import ConversationFetcher from '../../fetchers/ConversationFetcher';
+import { useI18n } from '../../i18n';
 
-function Chat({
-    listingId,
-}) {
+// Monotonic counter for stable, unique message ids so the pending
+// placeholder for each send can be located and replaced independently
+// (correct even when several sends are in flight at once).
+let messageIdCounter = 0;
+const nextMessageId = () => {
+    messageIdCounter += 1;
+    return `msg-${messageIdCounter}`;
+};
+
+function Chat() {
+    const { t } = useI18n();
     const messageListReference = React.createRef();
 
     const [chatMode, setChatMode] = useState(false);
@@ -20,29 +28,42 @@ function Chat({
     const [messageList, setMessageList] = useState([]);
 
     const sendQuestion = () => {
+        const text = question.trim();
+        if (!text) {
+            return;
+        }
+
         setChatMode(true);
         setQuestion('');
-        const message = {
+
+        const userMessage = {
+            id: nextMessageId(),
             position: 'right',
             type: 'text',
             date: new Date(),
-            text: question,
+            text,
         };
-        messageList.push(message);
-        setMessageList(messageList);
-        const answer = {
+        const placeholderId = nextMessageId();
+        const placeholder = {
+            id: placeholderId,
             position: 'left',
             type: 'text',
+            date: new Date(),
             text: '...',
         };
-        setMessageList([...messageList, answer]);
 
-        ConversationFetcher(question).then((reply) => {
-            setMessageList([...messageList, {
-                ...answer,
-                text: reply,
-                date: new Date(),
-            }]);
+        // Append immutably via the functional updater so concurrent/rapid
+        // sends never read a stale list or overwrite each other.
+        setMessageList((prev) => [...prev, userMessage, placeholder]);
+
+        ConversationFetcher(text).then((reply) => {
+            setMessageList((prev) =>
+                prev.map((item) =>
+                    item.id === placeholderId
+                        ? { ...item, text: reply, date: new Date() }
+                        : item,
+                ),
+            );
         });
     };
 
@@ -59,15 +80,21 @@ function Chat({
                     />
                 </div>
             )}
-            { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">What can I help you with?</h1>) }
+            { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">{t('chat.heading')}</h1>) }
             <div className="position-relative">
                 <Form.Control
                     style={{borderRadius: '25px'}}
                     type="text"
                     value={question}
-                    placeholder="Message InnerSun"
+                    placeholder={t('chat.placeholder')}
                     onChange={(e) => {
                         setQuestion(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            sendQuestion();
+                        }
                     }}
                 />
                 <Button
@@ -81,13 +108,6 @@ function Chat({
                     />
                 </Button>
             </div>
-            {!chatMode && (
-                <div className="mt-5">
-                    <Card>
-                        <Card.Body>This is some text within a card body.</Card.Body>
-                    </Card>
-                </div>
-            )}
         </div>
     );
 }

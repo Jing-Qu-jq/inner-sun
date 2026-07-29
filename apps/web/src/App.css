@@ -4,15 +4,6 @@ body {
   font-family: 'Poppins', sans-serif;
 }
 
-.hero-section {
-  min-height: 60vh;
-}
-
-.hero-image {
-  height: 60vh;
-  object-fit: cover;
-}
-
 .splide__slide {
   display: flex;
   justify-content: center;
@@ -48,4 +39,98 @@ body {
 
 .message-list-container::-webkit-scrollbar {
   display: none;  /* Hide scrollbar for Chrome, Safari and Opera */
+}
+
+/* ------------------------------------------------------------------ */
+/* Warm "inner sun" brand layer.                                       */
+/* Bootstrap 5 utilities do the layout/spacing/typography; this file   */
+/* only holds what utilities can't express: brand tokens, gradients,   */
+/* the hero scrim, the icon badge, and keyframe animations.            */
+/* ------------------------------------------------------------------ */
+:root {
+  --is-sun-start: #ff9a4d;
+  --is-sun-end: #ffd28a;
+  --is-ink: #2b2622;   /* warm charcoal for dark surfaces */
+  --is-cream: #fff7ee;
+
+  /* Coordinate Bootstrap's theme with the brand */
+  --bs-primary: #ff9a4d;
+  --bs-primary-rgb: 255, 154, 77;
+  --bs-link-color: #e07e28;
+  --bs-link-color-rgb: 224, 126, 40;
+  --bs-link-hover-color: #c96c1f;
+}
+
+/* Recolor Bootstrap's primary buttons to the sun accent */
+.btn-primary {
+  --bs-btn-bg: #ff9a4d;
+  --bs-btn-border-color: #ff9a4d;
+  --bs-btn-hover-bg: #f2892f;
+  --bs-btn-hover-border-color: #f2892f;
+  --bs-btn-active-bg: #e07e28;
+  --bs-btn-active-border-color: #e07e28;
+  --bs-btn-focus-shadow-rgb: 255, 154, 77;
+  --bs-btn-color: #fff;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-color: #fff;
+}
+
+/* Warm surfaces + gradient (used with Bootstrap utility classes) */
+.bg-warm-dark { background-color: var(--is-ink) !important; }
+.bg-cream { background-color: var(--is-cream) !important; }
+.bg-sun-gradient { background: linear-gradient(135deg, var(--is-sun-start), var(--is-sun-end)); }
+
+/* Hero */
+.hero-image { height: 68vh; object-fit: cover; }
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.20), rgba(20, 20, 30, 0.60));
+}
+.hero-content h1 {
+  font-weight: 700;
+  font-size: clamp(1.9rem, 4.5vw, 3.1rem);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+.hero-content .hero-lead {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
+}
+
+/* Circular icon badge (value cards, trust strip, how-it-works steps) */
+.icon-badge {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-badge-sun { background: rgba(255, 154, 77, 0.15); color: var(--is-sun-start); }
+.icon-badge-ondark { background: rgba(255, 255, 255, 0.10); color: var(--is-sun-end); }
+.icon-badge-gradient {
+  background: linear-gradient(135deg, var(--is-sun-start), var(--is-sun-end));
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(255, 154, 77, 0.35);
+}
+
+/* Subtle hover lift for cards */
+.hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.hover-lift:hover { transform: translateY(-4px); }
+
+/* Connection map animations */
+.map-arc { stroke-dasharray: 6 9; animation: mapDash 6s linear infinite; }
+@keyframes mapDash { to { stroke-dashoffset: -150; } }
+.map-node-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mapHalo 2.6s ease-in-out infinite;
+}
+@keyframes mapHalo {
+  0%, 100% { transform: scale(1); opacity: 0.35; }
+  50% { transform: scale(1.7); opacity: 0.10; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-arc, .map-node-halo, .hover-lift { animation: none; transition: none; }
 }
