@@ -49,3 +49,183 @@ body {
 .message-list-container::-webkit-scrollbar {
   display: none;  /* Hide scrollbar for Chrome, Safari and Opera */
 }
+
+/* ------------------------------------------------------------------ */
+/* Home page — warm "inner sun" brand system + section building blocks */
+/* ------------------------------------------------------------------ */
+:root {
+  --is-sun-start: #ff9a4d;
+  --is-sun-mid: #ffb765;
+  --is-sun-end: #ffd28a;
+  --is-ink: #2b2d42;
+  --is-muted: #6b7280;
+  --is-soft-bg: #fff7ee;
+}
+
+/* Hero */
+.hero-section {
+  min-height: 68vh;
+}
+
+.hero-image {
+  height: 68vh;
+  object-fit: cover;
+}
+
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.20), rgba(20, 20, 30, 0.60));
+}
+
+.hero-content {
+  max-width: 780px;
+  padding: 0 1.25rem;
+  z-index: 1;
+}
+
+.hero-content h1 {
+  font-weight: 700;
+  font-size: clamp(1.9rem, 4.5vw, 3.1rem);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+
+.hero-content .hero-lead {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
+}
+
+.hero-cta .btn {
+  border-radius: 999px;
+  padding: 0.6rem 1.6rem;
+  font-weight: 600;
+}
+
+/* Generic section scaffolding */
+.section {
+  padding: 4.5rem 0;
+}
+
+.section-alt {
+  background: var(--is-soft-bg);
+}
+
+.section-title {
+  font-weight: 700;
+  color: var(--is-ink);
+}
+
+.section-subtitle {
+  color: var(--is-muted);
+  max-width: 660px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* How it works */
+.step-number {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 auto 1rem;
+  background: linear-gradient(135deg, var(--is-sun-start), var(--is-sun-end));
+  box-shadow: 0 8px 20px rgba(255, 154, 77, 0.35);
+}
+
+/* Value cards */
+.value-card {
+  border: 0;
+  border-radius: 1rem;
+  height: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.value-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.10);
+}
+
+.value-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+/* Trust strip */
+.trust-strip {
+  background: var(--is-ink);
+  color: #fff;
+}
+
+.trust-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-content: center;
+  padding: 0.5rem 0;
+}
+
+.trust-item .trust-emoji {
+  font-size: 1.35rem;
+}
+
+/* Connection map */
+.connection-map {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  display: block;
+}
+
+.map-arc {
+  stroke-dasharray: 6 9;
+  animation: mapDash 6s linear infinite;
+}
+
+@keyframes mapDash {
+  to {
+    stroke-dashoffset: -150;
+  }
+}
+
+.map-node-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mapHalo 2.6s ease-in-out infinite;
+}
+
+@keyframes mapHalo {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.10;
+  }
+}
+
+/* CTA band */
+.cta-band {
+  background: linear-gradient(135deg, var(--is-sun-start), var(--is-sun-end));
+  color: #fff;
+  border-radius: 1.5rem;
+}
+
+.cta-band .btn {
+  border-radius: 999px;
+  font-weight: 600;
+  padding: 0.6rem 1.6rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-arc,
+  .map-node-halo {
+    animation: none;
+  }
+}

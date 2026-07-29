@@ -17,13 +17,11 @@ test('renders the InnerSun app shell', () => {
     // Brand appears in the header and footer.
     expect(screen.getAllByText(/InnerSun/i).length).toBeGreaterThan(0);
 
-    // Primary navigation into the chat funnel is present.
-    expect(screen.getByText(/Start Chatting/i)).toBeInTheDocument();
+    // Chat funnel entry points are present (nav link + hero/CTA buttons).
+    expect(screen.getAllByText(/Start chatting/i).length).toBeGreaterThan(0);
 
     // Home hero copy renders.
-    expect(
-        screen.getByText(/designed specifically for international students/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/wherever home is/i)).toBeInTheDocument();
 });
 
 test('team carousel is clearly labelled as sample content', () => {

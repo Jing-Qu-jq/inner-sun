@@ -4,15 +4,28 @@ import Navbar from 'react-bootstrap/Navbar';
 import Nav from 'react-bootstrap/Nav';
 import NavDropdown from 'react-bootstrap/NavDropdown';
 import Button from 'react-bootstrap/Button';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../images/logo.png';
 import Login from '../Login';
 
 const Header = () => {
     const [show, setShow] = useState(false);
+    const location = useLocation();
+    const navigate = useNavigate();
 
     const handleClose = () => setShow(false);
     const handleShow = () => setShow(true);
+
+    // "Meet Our Team" scrolls to the team section on the home page. From any
+    // other route, navigate home first and let HomePage handle the scroll.
+    const handleTeamClick = (e) => {
+        e.preventDefault();
+        if (location.pathname === '/') {
+            document.getElementById('team')?.scrollIntoView({ behavior: 'smooth' });
+        } else {
+            navigate('/', { state: { scrollTo: 'team' } });
+        }
+    };
 
     return (
         <>
@@ -33,6 +46,7 @@ const Header = () => {
                         <Nav className="w-100 d-flex justify-content-evenly">
                             <Nav.Link as={Link} to="/">Home</Nav.Link>
                             <Nav.Link as={Link} to="/chatPage">Start Chatting</Nav.Link>
+                            <Nav.Link href="/" onClick={handleTeamClick}>Meet Our Team</Nav.Link>
                             <NavDropdown title="Language" id="basic-nav-dropdown">
                                 <NavDropdown.Item href="#action/3.1">
                                     English
