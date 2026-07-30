@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 import { MessageList } from 'react-chat-elements';
 import 'react-chat-elements/dist/main.css';
 
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
+import { ChatHeart } from 'react-bootstrap-icons';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 import ConversationFetcher from '../../fetchers/ConversationFetcher';
@@ -22,10 +23,26 @@ const nextMessageId = () => {
 function Chat() {
     const { t } = useI18n();
     const messageListReference = React.createRef();
+    const inputRef = useRef(null);
 
     const [chatMode, setChatMode] = useState(false);
     const [question, setQuestion] = useState('');
     const [messageList, setMessageList] = useState([]);
+
+    // Suggested conversation starters for the empty state. For now clicking one
+    // pre-fills the input (the backend isn't wired yet — Feature 5); later these
+    // can send directly, and some become deterministic canned answers (Feature 10).
+    const starters = [
+        t('chat.starter.homesick'),
+        t('chat.starter.stress'),
+        t('chat.starter.friends'),
+        t('chat.starter.human'),
+    ];
+
+    const handleStarter = (text) => {
+        setQuestion(text);
+        inputRef.current?.focus();
+    };
 
     const sendQuestion = () => {
         const text = question.trim();
@@ -80,9 +97,17 @@ function Chat() {
                     />
                 </div>
             )}
-            { !chatMode && (<h1 className="mt-5 mb-5 pt-5 pb-5 text-center">{t('chat.heading')}</h1>) }
+
+            {!chatMode && (
+                <div className="text-center mt-auto mb-5">
+                    <h1 className="fw-bold mb-2">{t('chat.heading')}</h1>
+                    <p className="text-secondary mb-0">{t('chat.subheading')}</p>
+                </div>
+            )}
+
             <div className="position-relative">
                 <Form.Control
+                    ref={inputRef}
                     style={{borderRadius: '25px'}}
                     type="text"
                     value={question}
@@ -104,10 +129,31 @@ function Chat() {
                 >
                     <img
                         src={paperAirplaneIcon}
-                        alt="Send"
+                        alt={t('chat.send')}
                     />
                 </Button>
             </div>
+
+            {!chatMode && (
+                <div className="mb-auto">
+                    <p className="text-secondary text-center mt-2 mb-5" style={{ fontSize: '0.72rem' }}>
+                        {t('chat.disclaimer')}
+                    </p>
+                    <div className="mx-auto" style={{ maxWidth: '640px' }}>
+                        {starters.map((text) => (
+                            <button
+                                key={text}
+                                type="button"
+                                className="starter-row w-100 text-start d-flex align-items-center gap-3 bg-transparent border-0 border-bottom py-3 px-2"
+                                onClick={() => handleStarter(text)}
+                            >
+                                <ChatHeart className="text-primary flex-shrink-0" size={18} />
+                                <span>{text}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

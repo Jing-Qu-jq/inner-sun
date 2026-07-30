@@ -16,7 +16,7 @@ const ValueProps = () => {
     ];
 
     return (
-        <section className="py-5 bg-cream">
+        <section className="py-4 py-lg-5 bg-cream">
             <Container>
                 <div className="text-center mb-5">
                     <h2 className="fw-bold">{t('why.title')}</h2>

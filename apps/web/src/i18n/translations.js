@@ -11,7 +11,7 @@ export const translations = {
         'nav.language': 'Language',
         'nav.login': 'Login',
 
-        'hero.title': 'You’re not alone — wherever home is',
+        'hero.title': 'You’re not alone, wherever home is',
         'hero.lead':
             'Warm, culturally-aware emotional support for international students. Anonymous, secure, and here whenever you need it — in English or 中文.',
         'hero.ctaChat': 'Start chatting',
@@ -46,8 +46,6 @@ export const translations = {
         'map.title': 'Bridging home and here',
         'map.subtitle':
             'From campuses across the U.S. to families back in China and beyond — InnerSun keeps you connected to support that feels like home.',
-        'map.node.us': 'United States',
-        'map.node.cn': 'China',
 
         'trust.t1': '100% Anonymous',
         'trust.t2': 'Secure & Private',
@@ -74,8 +72,14 @@ export const translations = {
         'footer.rights': 'All rights reserved.',
 
         'chat.heading': 'What can I help you with?',
+        'chat.subheading': 'Share whatever’s on your mind, this is a private, judgment-free space.',
         'chat.placeholder': 'Message InnerSun',
         'chat.send': 'Send',
+        'chat.disclaimer': 'InnerSun offers supportive conversation, not medical advice or emergency care. If you’re in crisis, please contact your local emergency services.',
+        'chat.starter.homesick': 'I’ve been feeling really homesick lately',
+        'chat.starter.stress': 'I’m overwhelmed with academic pressure',
+        'chat.starter.friends': 'It’s hard to make friends in a new country',
+        'chat.starter.human': 'Can I talk to a real counselor?',
 
         'login.title': 'Log in',
         'login.email': 'Email',
@@ -120,8 +124,6 @@ export const translations = {
         'map.title': '连接家乡与此刻',
         'map.subtitle':
             '从美国的各所校园，到远在中国及世界各地的家人——InnerSun 让你始终与如家般的支持相连。',
-        'map.node.us': '美国',
-        'map.node.cn': '中国',
 
         'trust.t1': '完全匿名',
         'trust.t2': '安全私密',
@@ -147,8 +149,14 @@ export const translations = {
         'footer.rights': '保留所有权利。',
 
         'chat.heading': '有什么可以帮你的吗？',
+        'chat.subheading': '说出你心里的任何想法，这里私密、不带评判。',
         'chat.placeholder': '给 InnerSun 发消息',
         'chat.send': '发送',
+        'chat.disclaimer': 'InnerSun 提供的是支持性倾谈，而非医疗建议或紧急救助。如遇危机，请立即联系当地急救服务。',
+        'chat.starter.homesick': '我最近特别想家',
+        'chat.starter.stress': '学业压力压得我喘不过气',
+        'chat.starter.friends': '在陌生的国家很难交到朋友',
+        'chat.starter.human': '我可以和真人咨询师聊聊吗？',
 
         'login.title': '登录',
         'login.email': '邮箱',

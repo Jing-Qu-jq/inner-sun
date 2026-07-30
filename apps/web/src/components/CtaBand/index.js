@@ -11,7 +11,7 @@ const scrollToTeam = () => {
 const CtaBand = () => {
     const { t } = useI18n();
     return (
-        <section className="py-5">
+        <section className="py-4 py-lg-5">
             <Container>
                 <div className="bg-sun-gradient text-white text-center p-5 rounded-4">
                     <h2 className="fw-bold mb-2">{t('cta.title')}</h2>
