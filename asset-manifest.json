@@ -1,17 +1,17 @@
 {
   "files": {
-    "main.css": "/inner-sun/static/css/main.f1e851e7.css",
-    "main.js": "/inner-sun/static/js/main.079e4818.js",
+    "main.css": "/inner-sun/static/css/main.8bbbf967.css",
+    "main.js": "/inner-sun/static/js/main.a8489576.js",
     "static/media/hero_image.png": "/inner-sun/static/media/hero_image.53f988b677875233d5f3.png",
     "static/media/logo.png": "/inner-sun/static/media/logo.3d3afc2c64103ddb1af9.png",
     "static/media/profile_image.png": "/inner-sun/static/media/profile_image.5f7d17872c832a6b7147.png",
     "index.html": "/inner-sun/index.html",
     "static/media/paper_airplane.svg": "/inner-sun/static/media/paper_airplane.251fe1318f91f4817e4c40f963618feb.svg",
-    "main.f1e851e7.css.map": "/inner-sun/static/css/main.f1e851e7.css.map",
-    "main.079e4818.js.map": "/inner-sun/static/js/main.079e4818.js.map"
+    "main.8bbbf967.css.map": "/inner-sun/static/css/main.8bbbf967.css.map",
+    "main.a8489576.js.map": "/inner-sun/static/js/main.a8489576.js.map"
   },
   "entrypoints": [
-    "static/css/main.f1e851e7.css",
-    "static/js/main.079e4818.js"
+    "static/css/main.8bbbf967.css",
+    "static/js/main.a8489576.js"
   ]
 }
