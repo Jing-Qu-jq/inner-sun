@@ -16,7 +16,7 @@ const TrustStrip = () => {
     ];
 
     return (
-        <section className="bg-warm-dark text-white py-5">
+        <section className="bg-warm-dark text-white py-4 py-lg-5">
             <Container>
                 <Row className="g-4 justify-content-center">
                     {items.map((item) => (

@@ -1,23 +1,26 @@
 import React from 'react';
-import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
+import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
 import { geoEqualEarth } from 'd3-geo';
 import worldData from 'world-atlas/countries-110m.json';
-import { useI18n } from '../../i18n';
 
-// Countries to "light up". Add an entry here to highlight another country as
-// InnerSun expands — keyed by the world-atlas `properties.name`.
-const HIGHLIGHTED = {
-    'United States of America': { coordinates: [-98, 39], labelKey: 'map.node.us', flag: '🇺🇸' },
-    China: { coordinates: [104, 35.5], labelKey: 'map.node.cn', flag: '🇨🇳' },
-};
+// Countries to "light up", keyed by the world-atlas `properties.name`.
+// Add a name here to highlight another country as InnerSun expands.
+const HIGHLIGHTED = new Set(['United States of America', 'China', 'Taiwan']);
+
+// Arc endpoints (the "bridge"), as [longitude, latitude].
+const US = [-98, 39];
+const CN = [104, 35.5];
 
 // Keep these in sync with <ComposableMap> below so the hand-drawn arc lines up
-// with the projected country markers.
+// with the projected country markers. The frame is cropped fairly tight around
+// the inhabited latitudes to avoid empty "sky"/ocean padding above and below.
 const WIDTH = 800;
-const HEIGHT = 440;
+const HEIGHT = 300;
+const CENTER = [10, 32];
+const SCALE = 152;
 const PROJECTION = geoEqualEarth()
-    .scale(150)
-    .center([10, 25])
+    .scale(SCALE)
+    .center(CENTER)
     .translate([WIDTH / 2, HEIGHT / 2]);
 
 const SUN = '#ff9a4d';
@@ -25,32 +28,29 @@ const LAND = '#e7ded1';
 const LAND_STROKE = '#d8ccb8';
 
 const ConnectionMap = () => {
-    const { t } = useI18n();
-    const nodes = Object.values(HIGHLIGHTED);
-
     // A gentle quadratic arc between the two points that stays on the map
     // (a true geodesic would wrap over the pole and off the top edge).
-    const [ux, uy] = PROJECTION(HIGHLIGHTED['United States of America'].coordinates);
-    const [cx, cy] = PROJECTION(HIGHLIGHTED.China.coordinates);
+    const [ux, uy] = PROJECTION(US);
+    const [cx, cy] = PROJECTION(CN);
     const ctrlX = (ux + cx) / 2;
-    const ctrlY = Math.min(uy, cy) - 120;
+    const ctrlY = Math.min(uy, cy) - 80;
     const arc = `M ${ux} ${uy} Q ${ctrlX} ${ctrlY} ${cx} ${cy}`;
 
     return (
-        <div className="mx-auto" style={{ maxWidth: '960px' }}>
+        <div className="mx-auto">
             <ComposableMap
                 width={WIDTH}
                 height={HEIGHT}
                 projection="geoEqualEarth"
-                projectionConfig={{ scale: 150, center: [10, 25] }}
+                projectionConfig={{ scale: SCALE, center: CENTER }}
                 style={{ width: '100%', height: 'auto' }}
-                aria-label="A world map with the United States and China highlighted and connected, representing the bridge between where international students study and home."
+                aria-label="A world map with the United States, China and Taiwan highlighted, connected by an arc — representing the bridge between where international students study and home."
                 role="img"
             >
                 <Geographies geography={worldData}>
                     {({ geographies }) =>
                         geographies.map((geo) => {
-                            const highlighted = HIGHLIGHTED[geo.properties.name];
+                            const highlighted = HIGHLIGHTED.has(geo.properties.name);
                             return (
                                 <Geography
                                     key={geo.rsmKey}
@@ -74,21 +74,6 @@ const ConnectionMap = () => {
                 <circle r={4.5} fill="#ff8c42">
                     <animateMotion dur="6s" repeatCount="indefinite" path={arc} />
                 </circle>
-
-                {nodes.map((node) => (
-                    <Marker key={node.labelKey} coordinates={node.coordinates}>
-                        <circle r={11} className="map-node-halo" fill={SUN} />
-                        <circle r={5} fill={SUN} stroke="#fff" strokeWidth={1.5} />
-                        <text
-                            textAnchor="middle"
-                            y={-16}
-                            style={{ fontFamily: 'inherit', fontWeight: 600, fill: '#2b2622' }}
-                            fontSize={13}
-                        >
-                            {node.flag} {t(node.labelKey)}
-                        </text>
-                    </Marker>
-                ))}
             </ComposableMap>
         </div>
     );

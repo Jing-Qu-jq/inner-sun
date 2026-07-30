@@ -13,7 +13,7 @@ const HowItWorks = () => {
     ];
 
     return (
-        <section className="py-5">
+        <section className="py-4 py-lg-5">
             <Container>
                 <div className="text-center mb-5">
                     <h2 className="fw-bold">{t('how.title')}</h2>
