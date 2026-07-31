@@ -17,6 +17,8 @@ export const config = {
   nodeEnv: optional("NODE_ENV", "development"),
   /** Allowed origin for the web app during local dev. */
   webOrigin: optional("WEB_ORIGIN", "http://localhost:3000"),
+  /** PostgreSQL + pgvector connection string (Feature 3). */
+  databaseUrl: optional("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/innersun"),
 } as const;
 
 export const isProduction = config.nodeEnv === "production";

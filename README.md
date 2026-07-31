@@ -22,6 +22,7 @@ Managed with **npm workspaces** (npm 8+, Node 18+).
 ## Prerequisites
 
 - Node.js 18+ and npm 8+
+- **Docker Desktop** (for the local PostgreSQL + pgvector database — see [Database](#database-postgresql--pgvector))
 
 ## Install
 
@@ -55,6 +56,22 @@ This builds the shared types, then starts both:
 
 The web app proxies to the API in development (see `apps/web` `proxy` setting).
 
+## Database (PostgreSQL + pgvector)
+
+The API reads/writes a local PostgreSQL database (with the `pgvector` extension for
+Care-Pattern embeddings). It runs in Docker — start it once, then migrate + seed:
+
+```bash
+npm run db:up        # start Postgres 16 + pgvector (Docker, detached)
+npm run db:migrate   # create the schema
+npm run db:seed      # load sample data
+npm run db:verify    # prove cosine top-N vector search works
+```
+
+The API connects via `DATABASE_URL` (see `.env.example`); `GET /health` reports
+`"db": "up"` once it can reach the database. Full details and the schema overview live in
+[db/README.md](db/README.md).
+
 ## Useful scripts
 
 | Command | What it does |
@@ -66,6 +83,11 @@ The web app proxies to the API in development (see `apps/web` `proxy` setting).
 | `npm run build:web` | Production build of the web app |
 | `npm run build:api` | Compile the API to `services/api/dist` |
 | `npm run deploy:web` | Publish `apps/web` to GitHub Pages (prototype hosting) |
+| `npm run db:up` / `db:down` | Start / stop the local Postgres + pgvector container |
+| `npm run db:migrate` | Apply database migrations |
+| `npm run db:seed` | Load sample seed data |
+| `npm run db:reset` | Drop + recreate the schema, then migrate + seed |
+| `npm run db:verify` | Assert cosine top-N vector search works on seed rows |
 
 ## GitHub Pages (prototype)
 

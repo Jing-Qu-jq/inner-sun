@@ -6,7 +6,8 @@
   "workspaces": [
     "apps/*",
     "services/*",
-    "packages/*"
+    "packages/*",
+    "db"
   ],
   "scripts": {
     "dev": "npm run build:shared && concurrently -n web,api -c blue,green \"npm run dev:web\" \"npm run dev:api\"",
@@ -15,7 +16,14 @@
     "build:shared": "npm run build --workspace @innersun/shared",
     "build:web": "npm run build --workspace @innersun/web",
     "build:api": "npm run build:shared && npm run build --workspace @innersun/api",
-    "deploy:web": "npm run deploy --workspace @innersun/web"
+    "deploy:web": "npm run deploy --workspace @innersun/web",
+    "db:up": "npm run up --workspace @innersun/db",
+    "db:down": "npm run down --workspace @innersun/db",
+    "db:down:clean": "npm run down:clean --workspace @innersun/db",
+    "db:migrate": "npm run migrate --workspace @innersun/db",
+    "db:seed": "npm run seed --workspace @innersun/db",
+    "db:reset": "npm run reset --workspace @innersun/db",
+    "db:verify": "npm run verify --workspace @innersun/db"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
