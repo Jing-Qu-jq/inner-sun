@@ -1,9 +1,20 @@
-import "dotenv/config";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 
 /**
  * Central place to read and validate environment configuration.
  * See .env.example at the repo root for the full list of variables.
  */
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+// Load the repo-root .env explicitly rather than by cwd. The API runs with
+// services/api as its working directory (both via `npm run dev` and from dist/),
+// so bare `dotenv/config` would look for services/api/.env, find nothing, and
+// silently leave every variable undefined. Same approach as db/scripts/lib/env.ts.
+// The path is ../../.. from either src/ or dist/, which sit at the same depth.
+dotenv.config({ path: join(here, "..", "..", "..", ".env") });
 
 function optional(name: string, fallback: string): string {
   const value = process.env[name];
