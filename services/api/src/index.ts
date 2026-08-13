@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import type { ApiError, HealthResponse } from "@innersun/shared";
 import { config, isProduction } from "./config.js";
+import { isDbReachable, pool } from "./db.js";
 
 const pkgVersion = "0.1.0";
 
@@ -17,9 +18,15 @@ export function buildServer() {
 
   app.register(cors, { origin: config.webOrigin });
 
-  // Health check — confirms the service is up (DB connectivity added in Feature 3).
+  // Health check — confirms the service is up and reports DB connectivity (Feature 3).
   app.get("/health", async (): Promise<HealthResponse> => {
-    return { status: "ok", service: "@innersun/api", version: pkgVersion };
+    const db = (await isDbReachable()) ? "up" : "down";
+    return { status: "ok", service: "@innersun/api", version: pkgVersion, db };
+  });
+
+  // Close the DB pool when the server shuts down.
+  app.addHook("onClose", async () => {
+    await pool.end();
   });
 
   // Safe error handler: log the real error, never leak stack traces to clients.

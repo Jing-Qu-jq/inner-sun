@@ -1,0 +1,33 @@
+# Local PostgreSQL + pgvector for InnerSun development.
+#
+# One-command start (from the repo root):   npm run db:up
+# Stop (keep data):                          npm run db:down
+# Stop and wipe the volume:                  npm run db:down:clean
+#
+# Uses the official pgvector image (PostgreSQL 16 with the `vector` extension
+# pre-installed). Credentials/db name match the default DATABASE_URL in
+# .env.example: postgresql://postgres:postgres@localhost:5432/innersun
+#
+# Everything runs on localhost for V1 — no cloud account needed to build.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: innersun-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-innersun}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - innersun-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-innersun}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  innersun-db-data:

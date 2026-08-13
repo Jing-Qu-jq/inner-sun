@@ -66,4 +66,6 @@ export interface HealthResponse {
   status: "ok";
   service: string;
   version: string;
+  /** Database connectivity, confirmed by a lightweight query (Feature 3). */
+  db: "up" | "down";
 }

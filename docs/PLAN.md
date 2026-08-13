@@ -23,16 +23,16 @@
 
 # Phase 0 — Foundations
 
-## Feature 1: Monorepo scaffolding & local dev environment 🟢
+## Feature 1: Monorepo scaffolding & local dev environment ✅ (done)
 Turn the single-folder prototype into a monorepo the backend can live in, runnable locally with one command.
 **Depends on:** nothing.
-**AC:**
-1. Repo restructured to `apps/web` (current React app), `services/api` (new), `packages/shared` (types), `db/` (migrations/seeds).
-2. `packages/shared` exports the initial TypeScript types (e.g. `CarePattern`, `ChatMessage`, API request/response shapes).
-3. Root `README` documents how to install and run **web + api together on localhost** (e.g. `npm run dev`).
-4. `.env.example` lists every required env var (OpenAI key, DB URL, etc.); real secrets live only in a git-ignored `.env`.
-5. `npm run dev` starts the web app and the API locally; both boot with no errors.
-6. Existing GitHub Pages build for `apps/web` still works (prototype stays publishable).
+**AC (all met — re-verified 2026-08-13):**
+1. ✅ Repo restructured to npm workspaces: `apps/web` (`@innersun/web`, the React app moved via `git mv`), `services/api` (`@innersun/api`, Fastify + TS), `packages/shared` (`@innersun/shared`), and `db/` (filled in by Feature 3).
+2. ✅ `packages/shared` exports `CarePattern`, `ChatMessage`, `ChatRequest`, `ChatResponse`, `ApiError`, `HealthResponse`, and `Locale`.
+3. ✅ Root [README](../README.md) documents `npm install` and `npm run dev` (plus `dev:web` / `dev:api` individually).
+4. ✅ `.env.example` lists all 9 required vars (`NODE_ENV`, `API_HOST`, `API_PORT`, `WEB_ORIGIN`, the four `OPENAI_*`, and `DATABASE_URL`); `.env` is git-ignored.
+5. ✅ `npm run dev` boots both: web on `:3000` (HTTP 200) and the API on `:3001` (`/health` → `"db":"up"`), no errors in the combined output.
+6. ✅ GitHub Pages build still works: `CI=true npm run build:web` succeeds lint-gated and targets the `/inner-sun/` base path, with `deploy: gh-pages -d build` intact.
 
 ## Feature 2: Clean up the current UI & fix known prototype bugs ✅ (done)
 Make the existing UI presentable and correct before wiring real logic behind it.
@@ -57,7 +57,7 @@ Make the existing UI presentable and correct before wiring real logic behind it.
 - **Lightweight i18n (EN / 简体中文)** — `src/i18n/` context + dictionaries; the header Language toggle switches the whole UI (nav, hero, all sections, chat empty-state, map labels, footer, login) and persists via `localStorage`; adding a locale = one new dictionary. *(This front-runs the UI-string part of Feature 15; the AI **reply** localization stays server-side and is still owned by Feature 15.)*
 - **Responsive polish** — mobile hero text spans full width with compact CTAs; a shorter hero on tablet/portrait-iPad viewports; and tightened inter-section spacing (`py-4 py-lg-5`) so mobile/tablet aren't over-spaced. Verified via headless-Chrome screenshots at phone (390px), iPad (768px), and desktop widths.
 
-## Feature 3: Database setup — PostgreSQL + pgvector 🟢
+## Feature 3: Database setup — PostgreSQL + pgvector ✅ (done)
 Stand up the single data store for everything (relational + vectors).
 **Depends on:** Feature 1.
 **Recommendation (my suggestion):** **PostgreSQL + the `pgvector` extension**, hosted on **Supabase**.
@@ -65,12 +65,23 @@ Stand up the single data store for everything (relational + vectors).
 - *Why Supabase specifically:* managed Postgres with `pgvector` built in, **plus built-in Auth and Storage** (which accelerates the login feature, Feature 9), a generous free tier, and a local dev stack via the Supabase CLI (Docker).
 - *Alternative:* **Neon** (excellent serverless Postgres with branching) if you'd rather roll your own auth. Either works; pick Supabase to get auth "for free."
 - *Local dev:* run Postgres locally (Supabase CLI or a `pgvector/pgvector` Docker image) so no cloud account is needed to build.
-**AC:**
-1. Local Postgres runs with `pgvector` enabled (documented one-command start).
-2. Migration tooling in `db/` creates the initial schema: `users`, `care_patterns` (incl. a `vector` embedding column + `source_refs`), `conversations`, `messages`, `consents`, `bookings` (+ `canned_responses` if DB-backed).
-3. `care_patterns` supports vector similarity search (an index/query returning top-N by cosine distance works against seed rows).
-4. The API connects to the DB via `DATABASE_URL`; a health check confirms connectivity.
-5. Schema + migrations are reproducible from scratch on a fresh machine.
+**Chosen local runtime:** **Docker Compose + the official `pgvector/pgvector:pg16` image** (not the Supabase CLI). The migrations are plain Postgres SQL, so they port to Supabase unchanged when Feature 21 lands.
+
+**AC (all met — verified against a live database, 2026-08-13):**
+1. ✅ Local Postgres runs with `pgvector` enabled, one-command start (`npm run db:up` → healthy container; documented in [db/README.md](../db/README.md)).
+2. ✅ `db/migrations/0001_init.sql` creates all 7 tables — `users`, `care_patterns` (`vector(1536)` embedding + `source_refs` + jsonb `locale_notes`), `conversations`, `messages`, `consents`, `bookings`, `canned_responses` — plus a shared `set_updated_at()` trigger. Applied through a tracked, idempotent runner (`schema_migrations`).
+3. ✅ Cosine top-N works against seed rows: the matching pattern returns similarity `1.0000`, unrelated ones `0.0119` / `-0.0697`, using the HNSW `vector_cosine_ops` index (`npm run db:verify`).
+4. ✅ The API connects via `DATABASE_URL` and `GET /health` reports `"db":"up"` — and correctly reports `"db":"down"` while the database is stopped, recovering to `"up"` when it returns.
+5. ✅ Reproducible from scratch: after `db:down:clean` (volume destroyed), a fresh `db:up` → `migrate` → `seed` → `verify` produced identical results.
+
+**Two defects found during runtime verification (fixed in `5d70596`):**
+- **The API died whenever the database went away.** `pg`'s `Pool` forwards idle-client failures as an `'error'` event; with no listener registered Node treats it as unhandled and terminates the process. So instead of `/health` reporting `"db":"down"`, the whole service vanished — the opposite of what a health check is for. Fixed with a `pool.on("error", …)` handler in `services/api/src/db.ts` that logs and stays alive (the pool discards the broken client itself).
+- **The API never read the root `.env`.** `config.ts` used bare `import "dotenv/config"`, which resolves `.env` from the *current working directory* — and the API runs with `services/api` as cwd. It silently fell back to hardcoded defaults that happened to be identical, hiding the bug: pointing `DATABASE_URL` at a dead port still reported `"db":"up"`. Fixed by resolving the repo-root `.env` by path (matching `db/scripts/lib/env.ts`), verified from both `src/` and `dist/`. This also unblocks `OPENAI_API_KEY` in Feature 4, where no fallback exists to mask the same failure.
+
+**Notes for later features:**
+- Seed embeddings are **deterministic placeholders**, not real vectors — standing up the DB needs no OpenAI key. **Feature 6** replaces them with real `text-embedding-3-small` embeddings, which is also when the similarity scores above become meaningful rather than merely mechanical.
+- `users`, `conversations`, `messages`, `consents`, and `bookings` are intentionally **empty** — structure created here, populated by Features 5, 12, 16, and 20.
+- `.env` is git-ignored and does **not** travel with the repo. On any new machine, `cp .env.example .env` is a required setup step (see [db/README.md](../db/README.md)).
 
 ## Feature 4: Backend orchestrator skeleton (fixes the exposed API key) 🟢
 Stand up the API service that will own all OpenAI calls — closing the current security hole where the key is in the browser.
