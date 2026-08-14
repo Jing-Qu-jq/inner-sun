@@ -5,8 +5,18 @@
  * fleshed out as the corresponding features land (see docs/PLAN.md).
  */
 
-/** Supported UI / reply languages. Extensible — add a code and a resource file. */
-export type Locale = "en" | "zh-CN";
+/**
+ * Supported UI / reply languages. Extensible — add a code and a resource file.
+ *
+ * Exported as a runtime array as well as a type so that request validation can
+ * check against the very same list the type is derived from; a JSON-schema enum
+ * written out by hand would drift the first time a locale is added.
+ */
+export const LOCALES = ["en", "zh-CN"] as const;
+export type Locale = (typeof LOCALES)[number];
+
+/** Locale used when a client does not ask for one. */
+export const DEFAULT_LOCALE: Locale = "en";
 
 /** A single turn in a conversation. */
 export interface ChatMessage {
@@ -38,12 +48,18 @@ export interface CarePattern {
   localeNotes?: Partial<Record<Locale, string>>;
 }
 
-/** Request body for POST /chat (fleshed out in Feature 4). */
+/** Longest single user message the API accepts, in characters. */
+export const MAX_MESSAGE_LENGTH = 4000;
+
+/** Request body for POST /chat. */
 export interface ChatRequest {
   message: string;
-  /** Conversation/session identifier so history can be threaded server-side. */
+  /**
+   * Conversation/session identifier so history can be threaded server-side.
+   * Omit it on the first message — the response carries the id to send back.
+   */
   conversationId?: string;
-  /** Language the user wants replies in. */
+  /** Language the user wants replies in. Defaults to DEFAULT_LOCALE. */
   locale?: Locale;
 }
 
@@ -51,6 +67,8 @@ export interface ChatRequest {
 export interface ChatResponse {
   conversationId: string;
   reply: string;
+  /** The language the reply was requested in — echoed so the client can confirm. */
+  locale: Locale;
 }
 
 /** Standard error envelope returned by the API. */

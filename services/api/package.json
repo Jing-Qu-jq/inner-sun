@@ -7,7 +7,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run copy:prompts",
+    "copy:prompts": "mkdir -p dist/prompts && cp src/prompts/*.md dist/prompts/",
     "start": "node dist/index.js",
     "clean": "rm -rf dist"
   },
@@ -16,6 +17,7 @@
     "@innersun/shared": "*",
     "dotenv": "^16.4.5",
     "fastify": "^4.28.1",
+    "openai": "^7.4.0",
     "pg": "^8.12.0"
   },
   "devDependencies": {
