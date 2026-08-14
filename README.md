@@ -43,6 +43,9 @@ cp .env.example .env
 Fill in real values in `.env`. Secrets (like `OPENAI_API_KEY`) live **only** in the
 git-ignored `.env` and are read **server-side** by `services/api` — never in the browser.
 
+`OPENAI_API_KEY` is required: the API refuses to start without a real one (the
+`.env.example` placeholder counts as missing) and tells you what to fix.
+
 ## Run web + api together (localhost)
 
 ```bash
@@ -71,6 +74,30 @@ npm run db:verify    # prove cosine top-N vector search works
 The API connects via `DATABASE_URL` (see `.env.example`); `GET /health` reports
 `"db": "up"` once it can reach the database. Full details and the schema overview live in
 [db/README.md](db/README.md).
+
+## The chat API
+
+`POST /chat` is the one endpoint the web app talks to for conversation. The OpenAI key
+stays in the API process; the browser never sees it.
+
+```bash
+# First message — omit conversationId, and the response tells you the new one.
+curl -s localhost:3001/chat -H 'Content-Type: application/json' \
+  -d '{"message":"I have been feeling homesick lately"}'
+```
+
+```jsonc
+// Response
+{ "conversationId": "…uuid…", "reply": "…", "locale": "en" }
+```
+
+Send that `conversationId` back on every later message so the server can thread the
+history. `locale` is optional (`en` or `zh-CN`, default `en`) and may change mid-conversation.
+
+Notes for now: history is held **in memory**, so it is lost when the API restarts and an
+old `conversationId` then returns `404` — Feature 5 moves it into the `conversations` and
+`messages` tables. Care Pattern retrieval (Feature 7) is not wired in yet, so the prompt's
+guidance section is still empty.
 
 ## Useful scripts
 

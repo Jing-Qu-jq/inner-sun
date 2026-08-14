@@ -83,15 +83,31 @@ Stand up the single data store for everything (relational + vectors).
 - `users`, `conversations`, `messages`, `consents`, and `bookings` are intentionally **empty** — structure created here, populated by Features 5, 12, 16, and 20.
 - `.env` is git-ignored and does **not** travel with the repo. On any new machine, `cp .env.example .env` is a required setup step (see [db/README.md](../db/README.md)).
 
-## Feature 4: Backend orchestrator skeleton (fixes the exposed API key) 🟢
+## Feature 4: Backend orchestrator skeleton (fixes the exposed API key) ✅ (done)
 Stand up the API service that will own all OpenAI calls — closing the current security hole where the key is in the browser.
 **Depends on:** Features 1, 3.
-**AC:**
-1. API exposes a `POST /chat` endpoint (accepts a message + conversation/session id, returns a reply).
-2. The **OpenAI key lives only server-side**; it never appears in any frontend bundle or network response.
-3. A server-side OpenAI client wrapper is in place, model names configurable via env.
-4. Requests/responses validated against the `shared` types; malformed input returns a clean 4xx.
-5. Basic structured logging + error handling (no stack traces leaked to the client).
+
+**AC (all met — verified against a running server and live OpenAI, 2026-08-14):**
+1. ✅ `POST /chat` exists and threads conversations against **live OpenAI**. A first message (no `conversationId`) returns a new uuid and a real counseling reply; sending that id back carries the history — turn 2 asked only "which of those would you start with?" and the model correctly resolved "those" against turn 1's advice. The message shape and history growth (`system,user` → `system,user,assistant,user` → …) were additionally verified against a local OpenAI-compatible stub via `OPENAI_BASE_URL`, which is the cheap way to exercise the orchestrator without spending tokens.
+2. ✅ The key is read in exactly one place (`services/api/src/config.ts`) and appears nowhere in `apps/web`. A production web build (`CI=true npm run build:web`) contains no `sk-…` string, no `OPENAI_API_KEY`, and not the `.env` key's value. Client responses carry only `{conversationId, reply, locale}` — enforced by a response schema, so an undeclared field cannot leak even if a future handler sets one.
+3. ✅ `services/api/src/openai.ts` is the single upstream caller; reply/utility/embedding models, the token cap, the timeout and an optional `OPENAI_BASE_URL` all come from env.
+4. ✅ Malformed input returns a clean 4xx in every case tried: missing/empty/oversized/wrong-typed `message`, an unknown `locale`, a non-uuid `conversationId`, an undeclared extra property, and invalid JSON — all `400` with the `ApiError` envelope. An unknown-but-well-formed `conversationId` returns `404`. The locale list and length cap are imported from `@innersun/shared`, not re-typed.
+5. ✅ Structured logging (pino) records `conversationId`, model, turn count, token usage and duration — and **no message content**, which matters for a mental-health product. Upstream failures map to `502`/`503`/`504` with a generic message while the full error and its `cause` go to the log only; the dummy key never appeared in any log line.
+
+**Reply-language behavior: natural mirroring, by product decision.** The selected locale (the nav toggle, arriving as `locale`) sets where the conversation starts; the assistant then **mirrors the student's language naturally** if they switch, and honors an explicit request ("reply in Chinese"). The goal is parity with the chat assistants students already use — the conversation should not feel governed by a language rule they can sense.
+
+This was settled by experiment. An earlier draft enforced the selected locale strictly and never mirrored; it was implemented and verified live before being reverted in favor of the natural behavior above. One engineering finding from that detour is worth keeping, should language behavior ever be constrained again: **deleting the "mirror" instruction is not enough to stop mirroring.** Answering in the language of the user's message is a strong `gpt-4o` default, and it reasserted itself until the counter-case was stated explicitly ("this holds even when the student's own message is in a different language"). Also note that **only a live model can verify any of this** — a stub proves the prompt carried the right locale label, which is not the same as the model obeying it. The regression matrix is: selected locale vs. message language in both directions, the explicit-request override, and a mid-conversation toggle switch. **Feature 15** owns full reply localization and its acceptance criteria.
+
+Live testing also surfaced that OpenAI returns `429` both for a momentary rate limit and for an account out of credit — opposite situations, since one clears by itself and the other never does. Only the `insufficient_quota` error code separates them, so they now map to distinct codes (`upstream_quota_exhausted` vs `upstream_rate_limited`); otherwise a billing problem reads as load and "please try again shortly" is wrong advice.
+
+**A defect found during runtime verification:** Fastify's ajv defaults are lenient in two ways that quietly defeated AC 4. `coerceTypes` turned `{"message": 123}` into the string `"123"`, and `removeAdditional` silently stripped undeclared properties — so both cases sailed past validation and were sent to OpenAI as if valid, returning `502` rather than `400`. Static review would not catch this: the schema is correct, and it is the framework's defaults that override it. Both are now off (`ajv.customOptions` in `services/api/src/index.ts`), which is what makes `additionalProperties: false` and the declared types actually reject bad input.
+
+**Design decisions worth carrying forward:**
+- **A missing `OPENAI_API_KEY` stops startup** rather than failing on the first request, and the `.env.example` placeholder counts as missing — otherwise a freshly copied `.env` passes a presence check and dies later as an opaque upstream `401`. This is the Feature 3 `.env` lesson applied to a variable with no fallback to hide it.
+- **Conversation history is in memory** (`services/api/src/conversations.ts`), capped at 20 turns with a 2-hour idle eviction. It is lost on restart, and an unknown `conversationId` is a `404` rather than a silently adopted id — so an id always denotes a conversation this server really created. **Feature 5** replaces this module with the `conversations`/`messages` tables from Feature 3.
+- **The prompt's `{{care_pattern_strategies}}` slot renders empty** until Feature 7's retrieval lands; `{{locale}}` is filled here. `src/prompts/*.md` is copied into `dist/` by the build script, since `tsc` does not copy non-TS files.
+
+**Note on the "exposed API key" in the title:** the browser-side OpenAI call in `apps/web/src/fetchers/ConversationFetcher.js` still exists (its key is the literal placeholder `your-api-key-here`, so nothing real is exposed today). This feature gives the key a safe server-side home; **Feature 5** is what deletes the browser's direct call to `api.openai.com`.
 
 ---
 
