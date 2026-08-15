@@ -113,15 +113,28 @@ Live testing also surfaced that OpenAI returns `429` both for a momentary rate l
 
 # Phase 1 — Core chat (the heart of the product)
 
-## Feature 5: Wire the chat UI to our backend 🟢
+## Feature 5: Wire the chat UI to our backend ✅ (done)
 Replace the direct browser→OpenAI call with a call to our `/chat` API.
 **Depends on:** Feature 4.
-**AC:**
-1. `ConversationFetcher` calls `POST /chat` on our API instead of `api.openai.com`.
-2. A real end-to-end message round-trips on localhost: user types → API → OpenAI → reply shown.
-3. Conversation history is maintained per session on the server (not just client memory).
-4. Loading state (the "…" placeholder) and error state render correctly.
-5. No OpenAI key or prompt content is present in the browser.
+
+**AC (all met — verified in a real browser against the live API, OpenAI and PostgreSQL, 2026-08-14):**
+1. ✅ `ConversationFetcher` posts to `POST {REACT_APP_API_BASE_URL}/chat` (default `http://localhost:3001`). The browser's own network log for a full session shows one CORS preflight and one `POST http://localhost:3001/chat` per turn and **zero requests to `api.openai.com`**. The old key, prompt and chat-history array are gone from the module.
+2. ✅ A real message round-trips end to end: typed in the UI at `localhost:3000` → our API → OpenAI → reply rendered. Both **Enter** and the send button work.
+3. ✅ History is in PostgreSQL, not client or process memory. Proven the way only durable storage can be: a conversation was continued **across a full API restart** and the model correctly resolved "which of those two…" against the pre-restart turn. `conversations`/`messages` rows show turns in order, `user_id` null (anonymous until Feature 12), and a mid-conversation language switch updating `conversations.locale`.
+4. ✅ Loading state renders as a faded, pulsing "…" bubble; a failed turn replaces that placeholder with a distinct muted-red bubble instead of a fake assistant reply. Verified by stopping the API mid-session — "We couldn't reach InnerSun…" — and by four component tests covering the specific, generic and recoverable cases.
+5. ✅ Nothing sensitive reaches the browser. A production build (`CI=true npm run build:web`) contains no `sk-…` string, not the real key's value, no `OPENAI_API_KEY`, and none of the system prompt (checked against seven distinctive phrases). The only `api.openai.com` occurrence anywhere in `build/` is inside a source comment describing what the code no longer does.
+
+**What changed on the server.** Feature 4's in-memory `Map` is gone; `services/api/src/conversations.ts` now reads and writes the Feature 3 tables. Nothing is deleted — the last 20 turns are *replayed* to the model while the full transcript stays on record, which is what makes Feature 8's summarization, Feature 14's analytics and Feature 16's export/delete obligations possible at all. The system prompt is deliberately **not** stored: it is rebuilt every turn from the current locale and (from Feature 7) that turn's retrieved Care Patterns, so a stored copy would be a stale one.
+
+**Design decisions worth carrying forward:**
+- **Turns are sent one at a time**, queued in the Chat component. Two requests in flight against one conversation interleave server-side as user-1, user-2, reply-2, reply-1, and a first pair sent together creates *two* conversations because neither knows the id yet. Queueing costs nothing perceptible: both messages and their placeholders still appear instantly, only the network calls are ordered.
+- **A stale conversation id is recovered, not surfaced.** If the API 404s an id (the database was reset, or a tab has been open a long time), the fetcher retries once without it and the student simply gets a fresh conversation. Verified end to end by deleting the row the browser was holding mid-session.
+- **Errors carry a code, not a sentence.** The fetcher throws `ChatRequestError` with a machine-readable code and the component picks the wording, so error bubbles are translated at render time — an error already on screen re-renders in Chinese when the language toggle flips, like every other string in the UI.
+- **A database failure is a deliberate 503**, not an unplanned 500: verified by stopping the container mid-session. The API survives, `/health` reports `db: "down"`, no OpenAI tokens are spent on a turn that cannot be stored, and the pool recovers on its own when the container returns.
+- **The user's message is persisted before the upstream call**, so a turn is never lost to an OpenAI failure — the student's words are on record even when no reply is.
+- **The web app calls an absolute API URL rather than using the CRA dev proxy** (the now-dead `proxy` field was removed from `apps/web/package.json`). Local development then exercises the very same cross-origin request a deployed build will, so a CORS mistake surfaces now instead of in Feature 21. Note that Create React App reads `REACT_APP_*` from `apps/web/.env` or the shell — **not** from the repo-root `.env`; the root `.env.example` documents the variable with that caveat.
+
+**Not done here, on purpose:** the conversation id lives in page memory only, so a reload starts a visibly empty chat rather than silently resuming a transcript whose messages are no longer on screen. Rendering stored history belongs with accounts (Feature 12).
 
 ## Feature 6: Care Pattern data model + starter seed set 🟢
 Get real (or realistic) Care Patterns into the DB so matching has something to match against.
