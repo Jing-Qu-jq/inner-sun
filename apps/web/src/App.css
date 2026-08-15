@@ -133,6 +133,32 @@ body {
 .starter-row { transition: background-color 0.15s ease; }
 .starter-row:hover { background-color: rgba(255, 154, 77, 0.08); }
 
+/* Chat turn states (Feature 5). react-chat-elements puts a message's own
+   `className` on .rce-container-mbox, so these target the bubble inside it. */
+
+/* Waiting on a reply: the "..." placeholder reads as a pending turn, not as a
+   message whose text happens to be three dots. */
+.message-pending .rce-mbox {
+  opacity: 0.55;
+  animation: messagePulse 1.4s ease-in-out infinite;
+}
+@keyframes messagePulse { 50% { opacity: 0.3; } }
+
+/* The turn failed. Muted red rather than an alarming one — a service problem
+   should read as an apology, not as something the student did wrong. */
+.message-error .rce-mbox {
+  background-color: #fdf1ef;
+  color: #8a3324;
+  box-shadow: none;
+  border: 1px solid #f2cfc8;
+}
+.message-error .rce-mbox-right-notch,
+.message-error .rce-mbox-left-notch { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .message-pending .rce-mbox { animation: none; }
+}
+
 /* Connection map animations */
 .map-arc { stroke-dasharray: 6 9; animation: mapDash 6s linear infinite; }
 @keyframes mapDash { to { stroke-dashoffset: -150; } }

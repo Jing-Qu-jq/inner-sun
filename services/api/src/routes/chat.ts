@@ -3,24 +3,32 @@ import {
   DEFAULT_LOCALE,
   LOCALES,
   MAX_MESSAGE_LENGTH,
+  type ChatMessage,
   type ChatRequest,
   type ChatResponse,
 } from "@innersun/shared";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { config } from "../config.js";
-import { appendMessage, createConversation, getConversation, type Conversation } from "../conversations.js";
+import {
+  HISTORY_WINDOW,
+  appendMessage,
+  createConversation,
+  getConversation,
+  loadHistory,
+  updateConversationLocale,
+  type Conversation,
+} from "../conversations.js";
 import { AppError } from "../errors.js";
 import { createChatCompletion } from "../openai.js";
 import { buildSystemPrompt } from "../prompt.js";
 
 /**
- * POST /chat — the orchestrator endpoint (Feature 4).
+ * POST /chat — the orchestrator endpoint (Features 4 and 5).
  *
  * The browser sends a message here instead of to api.openai.com, so the API key
- * stays in this process. For now the route is a straight pass-through with
- * history; the interesting parts arrive later — Care Pattern retrieval in
- * Feature 7, prompt assembly and cost controls in Feature 8, crisis screening
- * in Feature 9.
+ * stays in this process. History is threaded through PostgreSQL as of Feature 5.
+ * The interesting parts arrive later — Care Pattern retrieval in Feature 7,
+ * prompt assembly and cost controls in Feature 8, crisis screening in Feature 9.
  */
 
 /**
@@ -63,16 +71,26 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     async (request): Promise<ChatResponse> => {
       const { message, conversationId, locale: requestedLocale } = request.body;
 
-      const conversation = resolveConversation(conversationId, requestedLocale ?? DEFAULT_LOCALE);
+      const conversation = await resolveConversation(conversationId, requestedLocale ?? DEFAULT_LOCALE);
       // An existing conversation keeps its locale unless this request asks to
       // change it, so a mid-conversation language switch takes effect.
-      if (requestedLocale) conversation.locale = requestedLocale;
+      if (requestedLocale && requestedLocale !== conversation.locale) {
+        await updateConversationLocale(conversation.id, requestedLocale);
+        conversation.locale = requestedLocale;
+      }
 
-      appendMessage(conversation, { role: "user", content: message });
+      // Earlier turns, then this one. Loading one short of the window leaves
+      // room for the new message, so at most HISTORY_WINDOW turns go upstream.
+      const history = await loadHistory(conversation.id, HISTORY_WINDOW - 1);
+      const userMessage: ChatMessage = { role: "user", content: message };
+
+      // Persisted before the upstream call, so a message is never lost to an
+      // OpenAI failure: the student's turn is on record even when no reply is.
+      await appendMessage(conversation.id, userMessage);
 
       const messages: ChatCompletionMessageParam[] = [
         { role: "system", content: buildSystemPrompt({ locale: conversation.locale }) },
-        ...conversation.messages.map((m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
+        ...[...history, userMessage].map((m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
       ];
 
       const started = Date.now();
@@ -85,14 +103,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           conversationId: conversation.id,
           locale: conversation.locale,
           model: completion.model,
-          turns: conversation.messages.length,
+          turns: history.length + 1,
           usage: completion.usage,
           durationMs: Date.now() - started,
         },
         "chat completion",
       );
 
-      appendMessage(conversation, { role: "assistant", content: completion.reply });
+      await appendMessage(conversation.id, { role: "assistant", content: completion.reply });
 
       return { conversationId: conversation.id, reply: completion.reply, locale: conversation.locale };
     },
@@ -103,13 +121,18 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
  * Continue the named conversation, or start one when no id was sent.
  *
  * An id we do not recognise is a 404 rather than a silently adopted new
- * conversation: the client should learn its id is stale (every id is, after a
- * restart, while history lives in memory) and start over with a fresh one.
+ * conversation: the client should learn its id is stale and start over with a
+ * fresh one. Since Feature 5 this is rare — ids survive restarts now — but it
+ * still happens after a database reset, and the web client handles it by
+ * dropping the id and retrying once.
  */
-function resolveConversation(conversationId: string | undefined, locale: ChatRequest["locale"]): Conversation {
+async function resolveConversation(
+  conversationId: string | undefined,
+  locale: ChatRequest["locale"],
+): Promise<Conversation> {
   if (!conversationId) return createConversation(locale ?? DEFAULT_LOCALE);
 
-  const existing = getConversation(conversationId);
+  const existing = await getConversation(conversationId);
   if (!existing) {
     throw new AppError(
       404,

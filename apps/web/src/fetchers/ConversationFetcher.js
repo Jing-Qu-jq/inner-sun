@@ -1,40 +1,104 @@
-const API_KEY = 'your-api-key-here';
-const ERROR_MESSAGE = 'Sorry, something went wrong while trying to connect to the assistant. Please try again in a moment.';
-// Persistent message history
-const chatHistory = [
-    { role: 'system', content: 'You are a compassionate and culturally sensitive AI assistant trained to provide psychological support and wellness guidance to international students. Your responses should be empathetic, non-judgmental, and encouraging. Always consider the unique challenges faced by students living abroad, such as cultural adjustment, academic pressure, language barriers, and homesickness. Offer thoughtful advice, emotional validation, and practical coping strategies. Avoid diagnosing or giving medical advice, and instead focus on being a supportive listener and guide.' }
-];
+/**
+ * Talks to the InnerSun API (Feature 5).
+ *
+ * Before this feature the browser called api.openai.com directly, which meant
+ * shipping an OpenAI key and the counseling system prompt to every visitor.
+ * Both now live only in the API service: this module sends a message to our
+ * own POST /chat and gets back a reply. Nothing here knows which model answers,
+ * what it was told to do, or how to authenticate to OpenAI.
+ */
 
-export default async function ConversationFetcher(question) {
+// Absolute rather than a relative path proxied by the dev server, so local
+// development exercises the same cross-origin request that a deployed build
+// will (the API allows WEB_ORIGIN via CORS). Feature 21 sets this for real.
+const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
+
+// Longest message the API accepts; mirrors MAX_MESSAGE_LENGTH in
+// packages/shared. Enforced in the UI too so an over-long message is prevented
+// rather than sent and rejected with a 400 the student cannot interpret.
+export const MAX_MESSAGE_LENGTH = 4000;
+
+// A little longer than the API's own OPENAI_TIMEOUT_MS (30s), so a slow model
+// still gets a chance to answer while a genuinely stuck request always ends —
+// the "..." placeholder must never be permanent.
+const REQUEST_TIMEOUT_MS = 45000;
+
+/**
+ * A failed turn. Carries a machine-readable `code` instead of display text: the
+ * Chat component picks the wording so error messages follow the language toggle
+ * like every other string in the UI.
+ */
+export class ChatRequestError extends Error {
+    constructor(code, { status, cause } = {}) {
+        super(`chat request failed: ${code}`, { cause });
+        this.name = 'ChatRequestError';
+        this.code = code;
+        this.status = status;
+    }
+}
+
+async function postChat({ message, conversationId, locale }) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let response;
     try {
-        // Add the user's latest question
-        chatHistory.push({role: 'user', content: question});
-
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        response = await fetch(`${API_BASE_URL}/chat`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: 'gpt-4',
-                messages: chatHistory
-            })
+            headers: { 'Content-Type': 'application/json' },
+            // conversationId is omitted on the first message of a conversation;
+            // the API answers with the id to send back on later turns.
+            body: JSON.stringify({ message, locale, ...(conversationId ? { conversationId } : {}) }),
+            signal: controller.signal,
         });
-
-        const data = await response.json();
-        if (data.choices && data.choices.length > 0) {
-            const reply = data.choices[0].message.content;
-            // Add assistant's reply to the history
-            chatHistory.push({role: 'assistant', content: reply});
-            return reply;
-        } else {
-            console.error('No response from assistant.');
-            return ERROR_MESSAGE;
-        }
-
     } catch (error) {
-        console.error('Error communicating with ChatGPT:', error.message);
-        return ERROR_MESSAGE;
+        // fetch only rejects for transport-level failures: the API is not
+        // running, the network is down, or our own timeout aborted it.
+        throw new ChatRequestError(controller.signal.aborted ? 'timeout' : 'network_error', { cause: error });
+    } finally {
+        clearTimeout(timeout);
+    }
+
+    // The API answers with JSON for both success and its ApiError envelope, but
+    // a proxy or a crash can still return something else — so parsing failure is
+    // treated as a failed turn rather than allowed to throw a raw SyntaxError.
+    let body;
+    try {
+        body = await response.json();
+    } catch (error) {
+        throw new ChatRequestError('bad_response', { status: response.status, cause: error });
+    }
+
+    if (!response.ok) {
+        throw new ChatRequestError(body?.error?.code || 'request_failed', { status: response.status });
+    }
+    if (!body?.reply || !body?.conversationId) {
+        throw new ChatRequestError('bad_response', { status: response.status });
+    }
+
+    return { reply: body.reply, conversationId: body.conversationId, locale: body.locale };
+}
+
+/**
+ * Send one message and return `{ reply, conversationId, locale }`.
+ *
+ * Pass the `conversationId` from the previous reply to continue a conversation;
+ * omit it to start one. History itself is the server's business — it lives in
+ * PostgreSQL, so this module never accumulates message state.
+ *
+ * Throws {@link ChatRequestError} when the turn fails.
+ */
+export default async function ConversationFetcher({ message, conversationId, locale }) {
+    try {
+        return await postChat({ message, conversationId, locale });
+    } catch (error) {
+        // A conversation the API has never heard of — the database was reset, or
+        // this tab has been open since an older one. Retrying once without the
+        // stale id silently starts a fresh conversation, which is a far better
+        // outcome for the student than an error they can do nothing about.
+        if (conversationId && error instanceof ChatRequestError && error.code === 'conversation_not_found') {
+            return postChat({ message, locale });
+        }
+        throw error;
     }
 }

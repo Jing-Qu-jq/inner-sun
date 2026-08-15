@@ -80,6 +80,11 @@ export const translations = {
         'chat.starter.stress': 'I’m overwhelmed with academic pressure',
         'chat.starter.friends': 'It’s hard to make friends in a new country',
         'chat.starter.human': 'Can I talk to a real counselor?',
+        // Shown in place of a reply when a turn fails (Feature 5).
+        'chat.error': 'Sorry, something went wrong and your message didn’t get through. Please try again in a moment.',
+        'chat.error.offline': 'We couldn’t reach InnerSun. Please check your connection and try again.',
+        'chat.error.timeout': 'That took longer than expected and timed out. Please try sending it again.',
+        'chat.error.busy': 'InnerSun is busy right now. Please try again in a moment.',
 
         'login.title': 'Log in',
         'login.email': 'Email',
@@ -157,6 +162,10 @@ export const translations = {
         'chat.starter.stress': '学业压力压得我喘不过气',
         'chat.starter.friends': '在陌生的国家很难交到朋友',
         'chat.starter.human': '我可以和真人咨询师聊聊吗？',
+        'chat.error': '抱歉，出了点问题，你的消息没能发送成功。请稍后再试一次。',
+        'chat.error.offline': '无法连接到 InnerSun。请检查网络后再试一次。',
+        'chat.error.timeout': '这次响应时间过长，已超时。请重新发送一次。',
+        'chat.error.busy': 'InnerSun 现在有点忙，请稍后再试。',
 
         'login.title': '登录',
         'login.email': '邮箱',
