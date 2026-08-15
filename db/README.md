@@ -21,8 +21,17 @@ From the **repo root**:
 ```bash
 npm run db:up        # start Postgres 16 + pgvector in Docker (detached)
 npm run db:migrate   # create the schema
-npm run db:seed      # load sample Care Patterns + canned responses
-npm run db:verify    # prove pgvector cosine top-N search works on the seed rows
+npm run db:seed      # load the starter Care Patterns + canned responses (embeds via OpenAI)
+npm run db:verify    # prove semantic retrieval returns the right pattern for a student's words
+```
+
+`db:seed` calls OpenAI to embed each pattern's `situation`, so it needs a real
+`OPENAI_API_KEY`. To stand the database up without one, seed placeholder vectors instead
+and upgrade them later:
+
+```bash
+npm run db:seed -- --fake      # deterministic placeholder vectors, no OpenAI key needed
+npm run db:reembed -- --stale  # replace them with real embeddings once a key is set
 ```
 
 `npm run db:up` uses [`docker-compose.yml`](docker-compose.yml) with the official
@@ -72,17 +81,29 @@ that is the vector, and it is placeholder data until Feature 6.
 | `npm run db:down` | Stop the container (**keeps** data) |
 | `npm run db:down:clean` | Stop the container and **delete** its data volume |
 | `npm run db:migrate` | Apply pending `migrations/*.sql` (idempotent; tracked in `schema_migrations`) |
-| `npm run db:seed` | Upsert the sample seed data (idempotent) |
-| `npm run db:reset` | Drop + recreate the schema, then migrate + seed (destructive) |
-| `npm run db:verify` | Run a cosine top-N query against seed rows and assert it works |
+| `npm run db:seed` | Upsert the starter seed data. Idempotent, and only embeds patterns whose `situation` actually changed — a second run costs nothing. `-- --fake` uses placeholder vectors |
+| `npm run db:reset` | Drop + recreate the schema, then migrate + seed (**destructive**; local databases only) |
+| `npm run db:verify` | Embed student-style queries and assert the right Care Pattern ranks first |
+| `npm run db:reembed` | Re-embed every pattern (use after changing the embedding model). `-- --stale` limits it to rows that need it |
+| `npm run db:export:patterns` | Write the live patterns to `seeds/exported-care-patterns.json` as a version-controlled backup. `-- --remote` reads the hosted database |
+| `npm run db:pull:patterns` | Copy Care Patterns from the hosted database into the local one |
+
+### Guard on the destructive scripts
+
+`db:reset` and `db:seed` refuse to run unless `DATABASE_URL` points at localhost. Once a
+hosted database holds the researcher-authored knowledge base, a mistakenly-pointed `.env`
+would destroy or overwrite it in one command with no undo. To reach the hosted database on
+purpose, pass `-- --allow-remote`; to work with its content locally, use `db:pull:patterns`
+rather than repointing `DATABASE_URL`.
 
 ## Layout
 
 ```
 docker-compose.yml   Local Postgres 16 + pgvector
-migrations/          Ordered *.sql schema migrations (0001_init.sql = initial schema)
-seeds/               Sample seed data (synthetic, de-identified)
-scripts/             Migration runner, seeder, reset, and verify (TypeScript, run via tsx)
+migrations/          Ordered *.sql schema migrations (0001 = initial schema, 0002 = embedding provenance)
+seeds/               Starter seed data (synthetic, de-identified) + exported backups
+scripts/             Migration runner, seeder, reset, verify, reembed, export, pull (TypeScript, via tsx)
+scripts/lib/         Shared helpers: env, embedding, vector, guard, CLI args
 ```
 
 ## Schema (0001_init.sql)
@@ -105,9 +126,16 @@ scripts/             Migration runner, seeder, reset, and verify (TypeScript, ru
 - **Migrations are reproducible from scratch:** on a fresh DB, `db:migrate` builds the
   full schema in order; each file runs in its own transaction and is recorded so re-runs
   are no-ops.
-- **Seed embeddings are placeholders.** Feature 3's seeds use a deterministic pseudo-embedding
-  (no OpenAI key needed just to stand up the DB). **Feature 6** loads the real starter set and
-  embeds each pattern's `situation` with OpenAI.
+- **Only `situation` is embedded.** A student's message is matched against a description of
+  a *situation*, never against the counselor guidance that situation calls for — embedding
+  the strategies too would pull the match toward advice language and degrade it.
+- **`needs_embedding` marks a row whose vector cannot be trusted** — never embedded, left
+  over from a failed save, or a `--fake` placeholder. Such a row is invisible to retrieval,
+  which is a silent failure, so it is flagged rather than left looking healthy.
+  `db:reembed -- --stale` sweeps them up and `db:verify` refuses to run while any exist.
+- **Vectors from different models are not comparable.** `embedding_model` records which
+  model produced each vector so a model change is detectable; mixing them would produce
+  meaningless similarity scores rather than an error.
 - **`db:down` keeps your data; `db:down:clean` destroys it.** The rows live in a Docker *volume*
   (`db_innersun-db-data`) that outlives the container, which is why `db:down` → `db:up` comes back
   with the schema intact and `db:migrate` reports "Schema up to date".

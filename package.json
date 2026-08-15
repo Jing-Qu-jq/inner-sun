@@ -21,9 +21,12 @@
     "db:down": "npm run down --workspace @innersun/db",
     "db:down:clean": "npm run down:clean --workspace @innersun/db",
     "db:migrate": "npm run migrate --workspace @innersun/db",
-    "db:seed": "npm run seed --workspace @innersun/db",
-    "db:reset": "npm run reset --workspace @innersun/db",
-    "db:verify": "npm run verify --workspace @innersun/db"
+    "db:seed": "npm run seed --workspace @innersun/db --",
+    "db:reset": "npm run reset --workspace @innersun/db --",
+    "db:verify": "npm run verify --workspace @innersun/db",
+    "db:reembed": "npm run reembed --workspace @innersun/db --",
+    "db:export:patterns": "npm run export:patterns --workspace @innersun/db --",
+    "db:pull:patterns": "npm run pull:patterns --workspace @innersun/db --"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

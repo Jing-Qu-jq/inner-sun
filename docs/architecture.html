@@ -183,7 +183,7 @@ flowchart TD
     control. The dashed pieces come later.</div>
 
   <div class="note eng"><span class="label">Engineering detail</span><br/>
-    The orchestrator is a thin, stateless service (Node or Python). Keeping OpenAI calls behind it gives us
+    The orchestrator is a thin, stateless service (<b>Node + TypeScript on Fastify</b>). Keeping OpenAI calls behind it gives us
     <b>security</b> (the API key never reaches the browser — today's prototype leaks it, which we fix in v1),
     <b>cost control</b> (cache, tier models, cap tokens centrally), and <b>portability</b> (the provider sits
     behind one interface, so "we use OpenAI" is a config choice, not a lock-in).</div>
@@ -269,9 +269,16 @@ flowchart LR
   </pre><div class="figcap">Figure 3 — Authoring once; retrieving (and cold-starting) at chat time.</div></div>
 
   <p><b>Where Care Patterns live:</b> <b>Postgres with the <code>pgvector</code> extension.</b> One managed database
-    (Supabase / Neon / AWS RDS) holds everything — pattern text, embeddings, users, memory, bookings, canned answers —
+    holds everything — pattern text, embeddings, users, memory, bookings, canned answers —
     with real transactions and one set of backups. No separate vector database (Pinecone/Qdrant/Weaviate) is needed at
     our scale; pgvector handles tens of thousands of patterns comfortably, and we can graduate later if volume ever demands it.</p>
+
+  <div class="note plain"><span class="label">Provider: Supabase</span><br/>
+    Settled 2026-08-15. Local development runs the same thing in Docker via the <code>pgvector/pgvector:pg16</code>
+    image, and the migrations are plain SQL that port between them unchanged. Supabase was already the assumed
+    direction — the schema anticipates reconciling <code>users</code> with its <code>auth.users</code> — so adopting
+    it when the researcher admin tool needed hosting means the final deployment inherits the work rather than
+    repeating it.</div>
 
   <p><b>Care Pattern schema (v1):</b> <code>id/title</code> · <code>situation</code> (embedded → matching) ·
     <code>signals</code> · <code>strategies</code> (→ prompt) · <code>avoid</code> · <code>escalation</code> ·
@@ -290,7 +297,15 @@ flowchart LR
   <div class="note eng"><span class="label">Engineering detail</span><br/>
     A pattern's embedding is computed <b>once</b>, on save, and stored with the row — never recomputed at chat time.
     Adding pattern #200 is a pure content task; no code change. Retrieval is
-    <code>ORDER BY embedding &lt;=&gt; :query_vector LIMIT N</code>.</div>
+    <code>ORDER BY embedding &lt;=&gt; :query_vector LIMIT N</code>.
+    <br/><br/>
+    Two consequences of "once, on save" are worth stating, because both are <b>silent failures rather than errors</b>.
+    A pattern with no embedding is <b>invisible to retrieval</b> — the row looks perfectly healthy in any table viewer,
+    and nothing reports that it is unreachable. And <b>vectors from different embedding models are not comparable</b>,
+    so a table holding a mix produces meaningless similarity scores rather than a complaint. The schema therefore
+    stores provenance beside the vector: which model produced it, when, and a flag marking a vector that does not
+    currently reflect its <code>situation</code> text. A re-embed command sweeps flagged rows, and the verification
+    script refuses to rank anything while any exist.</div>
 
   <h3>How matching actually works</h3>
   <div class="note plain"><span class="label">Key insight</span><br/>
@@ -489,9 +504,10 @@ flowchart LR
     <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
     <tbody>
       <tr><td>Client</td><td>React SPA + i18n (EN/中文, extensible)</td><td>Existing prototype; more languages later</td></tr>
-      <tr><td>Backend</td><td>Node or Python orchestration API</td><td>Keeps keys server-side; provider-swappable</td></tr>
+      <tr><td>Backend</td><td>Node + TypeScript orchestration API (Fastify)</td><td>Keeps keys server-side; provider-swappable; one language across FE/BE</td></tr>
       <tr><td>Models</td><td>OpenAI: gpt-4o (reply), gpt-4o-mini (classify/safety/summarize), text-embedding-3-small</td><td>Per choice; tiered for cost</td></tr>
-      <tr><td>Storage</td><td>Postgres + pgvector</td><td>One store for relational + vectors</td></tr>
+      <tr><td>Storage</td><td>Postgres + pgvector — Docker locally, <b>Supabase</b> hosted</td><td>One store for relational + vectors; plain-SQL migrations port between the two</td></tr>
+      <tr><td>Authoring</td><td>Researcher admin tool served by the API, same origin</td><td>Non-engineers write the knowledge base; saving re-embeds automatically</td></tr>
       <tr><td>Funnel</td><td>Scheduling + payments (e.g., Stripe)</td><td>Human bookings = revenue</td></tr>
     </tbody>
   </table>

@@ -12,10 +12,14 @@
     "seed": "tsx scripts/seed.ts",
     "reset": "tsx scripts/reset.ts",
     "verify": "tsx scripts/verify.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "reembed": "tsx scripts/reembed.ts",
+    "export:patterns": "tsx scripts/export-patterns.ts",
+    "pull:patterns": "tsx scripts/pull-patterns.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
+    "openai": "^7.4.0",
     "pg": "^8.12.0"
   },
   "devDependencies": {
