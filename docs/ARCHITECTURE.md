@@ -88,7 +88,8 @@ the right researcher-authored guidance (a Care Pattern), asks OpenAI to write a 
 style, checks it for safety, and decides when to suggest a human counselor. Everything the AI "knows"
 lives in our database, which our researchers control. The dashed pieces come later.
 
-**Engineering detail:** The orchestrator is a thin, stateless service (Node or Python). Keeping OpenAI
+**Engineering detail:** The orchestrator is a thin, stateless service (**Node + TypeScript on Fastify**,
+settled in PLAN.md Feature 1). Keeping OpenAI
 calls behind it gives us **security** (the API key never reaches the browser — today's prototype leaks
 it, which we fix in v1), **cost control** (cache, tier models, cap tokens centrally), and **portability**
 (the provider sits behind one interface, so "we use OpenAI" is a config choice, not a lock-in).
@@ -191,11 +192,17 @@ flowchart LR
 
 </details>
 
-**Where Care Patterns live:** **Postgres with the `pgvector` extension.** One managed database
-(Supabase / Neon / AWS RDS) holds *everything* — pattern text, embeddings, users, memory, bookings,
-and canned answers — with real transactions and one set of backups. No separate vector database
-(Pinecone/Qdrant/Weaviate) is needed at our scale; pgvector handles tens of thousands of patterns
-comfortably, and we can graduate later *if* volume ever demands it.
+**Where Care Patterns live:** **Postgres with the `pgvector` extension.** One managed database holds
+*everything* — pattern text, embeddings, users, memory, bookings, and canned answers — with real
+transactions and one set of backups. No separate vector database (Pinecone/Qdrant/Weaviate) is needed
+at our scale; pgvector handles tens of thousands of patterns comfortably, and we can graduate later
+*if* volume ever demands it.
+
+> **Provider: Supabase** (settled 2026-08-15). Local development runs the same thing in Docker via
+> the `pgvector/pgvector:pg16` image, and the migrations are plain SQL that port between them
+> unchanged. Supabase was already the assumed direction — the schema anticipates reconciling `users`
+> with its `auth.users` — so adopting it when the researcher admin tool needed hosting means the
+> final deployment inherits the work rather than repeating it. See PLAN.md Features 17 and 21.
 
 **Care Pattern schema (v1):** `id/title` · `situation` (embedded → matching) · `signals` ·
 `strategies` (→ prompt) · `avoid` · `escalation` · `source_refs` (research-paper citations) ·
@@ -212,6 +219,15 @@ comfortably, and we can graduate later *if* volume ever demands it.
 **Engineering detail:** A pattern's embedding is computed **once**, on save, and stored with the row —
 never recomputed at chat time. Adding pattern #200 is a pure content task; no code change. Retrieval is
 `ORDER BY embedding <=> :query_vector LIMIT N`.
+
+Two consequences of "once, on save" are worth stating, because both are silent failures rather than
+errors. **A pattern with no embedding is invisible to retrieval** — the row looks perfectly healthy in
+any table viewer, and nothing anywhere reports that it is unreachable. And **vectors from different
+embedding models are not comparable**, so a table holding a mix produces meaningless similarity scores
+rather than a complaint. The schema therefore stores provenance next to the vector: which model
+produced it, when, and a flag marking a vector that does not currently reflect its `situation` text
+(never embedded, or a save whose embedding call failed). A re-embed command sweeps flagged rows, and
+the verification script refuses to rank anything while any exist.
 
 ### How matching actually works
 
@@ -437,7 +453,8 @@ Deferred until we have users, data, revenue, and governance in place.
 | Layer | Choice | Why |
 |-------|--------|-----|
 | Client | React SPA + i18n (EN/中文, extensible) | Existing prototype; more languages later |
-| Backend | Node or Python orchestration API | Keeps keys server-side; provider-swappable |
+| Backend | Node + TypeScript orchestration API (Fastify) | Keeps keys server-side; provider-swappable; one language across FE/BE |
 | Models | OpenAI: gpt-4o (reply), gpt-4o-mini (classify/safety/summarize), text-embedding-3-small | Per choice; tiered for cost |
-| Storage | Postgres + pgvector | One store for relational + vectors; cheap, simple |
+| Storage | Postgres + pgvector — Docker locally, **Supabase** hosted | One store for relational + vectors; cheap, simple; plain-SQL migrations port between the two |
+| Authoring | Researcher admin tool served by the API, same origin | Non-engineers write the knowledge base; saving re-embeds automatically |
 | Funnel | Scheduling + payments (e.g., Stripe) | Human bookings = revenue |

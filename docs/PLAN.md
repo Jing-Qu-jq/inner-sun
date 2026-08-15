@@ -6,18 +6,28 @@
 
 ## How to use this plan
 - Work one feature at a time. A feature is **done** only when all its AC pass.
-- **Everything runs on `localhost` for now.** Publishing/deployment is the **last** feature.
+- **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
 - The current prototype stays on GitHub Pages untouched until then.
-- 🟢 = in V1 scope. Anything marked *Future* in the architecture is intentionally out of scope here.
+- ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3; the reason is recorded in its own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+
+### The one exception to localhost-only (2026-08-15)
+A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
+plus the database it writes to are hosted early** — see Feature 17 for the full reasoning.
+Scoped as narrowly as possible: the hosted service serves the admin UI and its API and
+nothing else. `POST /chat` is switched off there (`ENABLE_CHAT_ROUTES=false`), the student
+chat app stays on localhost, and the GitHub Pages prototype is untouched. Everything else
+in this plan is still built and verified locally, and Feature 21 still owns real deployment.
 
 ## Stack decisions (locked for V1)
 - **Frontend:** the existing React SPA (`inner-sun`), cleaned up and wired to our own backend.
 - **Backend:** **Node + TypeScript** orchestrator (**Fastify** — chosen in Feature 1). One language across FE/BE → shared types.
-- **Database:** **PostgreSQL + `pgvector`** (see Feature 3 for the provider recommendation).
+- **Database:** **PostgreSQL + `pgvector`** — Docker Compose locally (Feature 3), Supabase hosted (below).
 - **AI:** OpenAI — `gpt-4o` (reply), `gpt-4o-mini` (classify/safety/summarize/normalize), `text-embedding-3-small`.
 - **Repo:** single **monorepo** (`web` / `api` / `db` / `shared`), per the architecture discussion.
 - **Languages:** English + 简体中文 from the start (extensible).
-- **Eventual hosting:** Vercel / Netlify / Cloudflare (frontend beside backend) — **deferred to the last feature.**
+- **Eventual hosting:** frontend beside backend — **deferred to the last feature**, except the Feature 17 admin slice noted above.
+- **Managed Postgres: Supabase** (chosen 2026-08-15 for the Feature 17 slice). It was already the direction this plan assumed — the Feature 3 migration comments anticipate reconciling `users` with `auth.users`, and Feature 12 plans to use its Auth — so picking it now means Feature 21 inherits the work rather than redoing it. Migrations are plain SQL and port unchanged. **Render** hosts the admin service; free instances spin down when idle, so the first load after a break is slow.
 
 ---
 
@@ -65,7 +75,9 @@ Stand up the single data store for everything (relational + vectors).
 - *Why Supabase specifically:* managed Postgres with `pgvector` built in, **plus built-in Auth and Storage** (which accelerates the login feature, Feature 9), a generous free tier, and a local dev stack via the Supabase CLI (Docker).
 - *Alternative:* **Neon** (excellent serverless Postgres with branching) if you'd rather roll your own auth. Either works; pick Supabase to get auth "for free."
 - *Local dev:* run Postgres locally (Supabase CLI or a `pgvector/pgvector` Docker image) so no cloud account is needed to build.
-**Chosen local runtime:** **Docker Compose + the official `pgvector/pgvector:pg16` image** (not the Supabase CLI). The migrations are plain Postgres SQL, so they port to Supabase unchanged when Feature 21 lands.
+**Chosen local runtime:** **Docker Compose + the official `pgvector/pgvector:pg16` image** (not the Supabase CLI). The migrations are plain Postgres SQL, so they port to Supabase unchanged.
+
+✅ **The hosted provider is now settled: Supabase**, provisioned early for the Feature 17 admin tool rather than waiting for Feature 21. The Neon alternative above is kept as a record of the reasoning, not as an open question.
 
 **AC (all met — verified against a live database, 2026-08-13):**
 1. ✅ Local Postgres runs with `pgvector` enabled, one-command start (`npm run db:up` → healthy container; documented in [db/README.md](../db/README.md)).
@@ -79,7 +91,7 @@ Stand up the single data store for everything (relational + vectors).
 - **The API never read the root `.env`.** `config.ts` used bare `import "dotenv/config"`, which resolves `.env` from the *current working directory* — and the API runs with `services/api` as cwd. It silently fell back to hardcoded defaults that happened to be identical, hiding the bug: pointing `DATABASE_URL` at a dead port still reported `"db":"up"`. Fixed by resolving the repo-root `.env` by path (matching `db/scripts/lib/env.ts`), verified from both `src/` and `dist/`. This also unblocks `OPENAI_API_KEY` in Feature 4, where no fallback exists to mask the same failure.
 
 **Notes for later features:**
-- Seed embeddings are **deterministic placeholders**, not real vectors — standing up the DB needs no OpenAI key. **Feature 6** replaces them with real `text-embedding-3-small` embeddings, which is also when the similarity scores above become meaningful rather than merely mechanical.
+- Seed embeddings were **deterministic placeholders**, not real vectors — standing up the DB needed no OpenAI key. ✅ **Feature 6 has since replaced them** with real `text-embedding-3-small` embeddings, which is when the similarity scores above became meaningful rather than merely mechanical. The placeholder path survives as `db:seed -- --fake` so a fresh database can still be stood up without a key.
 - `users`, `conversations`, `messages`, `consents`, and `bookings` are intentionally **empty** — structure created here, populated by Features 5, 12, 16, and 20.
 - `.env` is git-ignored and does **not** travel with the repo. On any new machine, `cp .env.example .env` is a required setup step (see [db/README.md](../db/README.md)).
 
@@ -136,15 +148,37 @@ Replace the direct browser→OpenAI call with a call to our `/chat` API.
 
 **Not done here, on purpose:** the conversation id lives in page memory only, so a reload starts a visibly empty chat rather than silently resuming a transcript whose messages are no longer on screen. Rendering stored history belongs with accounts (Feature 12).
 
-## Feature 6: Care Pattern data model + starter seed set 🟢
+## Feature 6: Care Pattern data model + starter seed set ✅ (done)
 Get real (or realistic) Care Patterns into the DB so matching has something to match against.
 **Depends on:** Feature 3.
-**AC:**
-1. `care_patterns` rows follow the v1 schema: `id/title`, `situation`, `signals`, `strategies`, `avoid`, `escalation`, `source_refs`, `locale_notes` (authored in **English**).
-2. A seed script loads a starter set (≥ 8–10 patterns) covering common international-student situations.
-3. On insert/update, each pattern's `situation` is **embedded once** and stored in its vector column.
-4. A documented script/command can re-embed all patterns (e.g. if the embedding model changes).
-5. Seed data is de-identified and clearly synthetic/sample (no real PHI in the repo).
+
+**AC (all met — verified against a live database and live OpenAI, 2026-08-15):**
+1. ✅ `care_patterns` rows follow the v1 schema from Feature 3, unchanged. `0002_care_pattern_embedding_meta.sql` adds only *provenance* alongside the vector: `embedding_model`, `embedded_at`, `needs_embedding`.
+2. ✅ **12 patterns** (up from Feature 3's three) covering homesickness, academic stress in a second language, social belonging, visa/immigration anxiety, financial pressure, family expectations, discrimination and microaggressions, sleep across time zones, imposter feelings, long-distance relationships, help-seeking stigma, and post-graduation uncertainty.
+3. ✅ `situation` is embedded on insert/update with `text-embedding-3-small`, **once**: the seed compares stored text, model and flag before spending a call, so a second `db:seed` reports `0 embedded, 12 reused existing embedding`. All 12 embed in a single batched request.
+4. ✅ `npm run db:reembed` re-embeds everything; `-- --stale` limits it to rows that are unembedded, flagged, or carrying another model's vector. Verified by nulling one vector and flagging another — the sweep found exactly those two.
+5. ✅ Every pattern is synthetic and de-identified, and every `sourceRefs` entry is a visible `SAMPLE-REF:` placeholder. The seed file header states plainly that these are scaffolding for the researcher to replace, not clinical content.
+
+**The verification that mattered.** Feature 3's `db:verify` embedded a seed pattern's own `situation` with the same deterministic function that had produced the stored vector, then celebrated a similarity of 1.0. That check would have passed just as happily if the vectors meant nothing — because they did. It now embeds **student-style paraphrases** and asserts the right pattern ranks first:
+
+| Query (as a student might type it) | Top match | Score | Margin over #2 |
+| --- | --- | --- | --- |
+| "I can't stop thinking about my family back home and I really miss the food I grew up with" | Homesickness & cultural adjustment | 0.4509 | 0.1187 |
+| "my visa paperwork is due next month and I'm terrified I'll get something wrong and have to leave" | Visa & immigration status anxiety | 0.6569 | 0.2828 |
+| "everyone in my cohort seems so much smarter than me, I never say anything in seminars" | Imposter feelings in a competitive program | 0.6079 | 0.2161 |
+| "I stay up until 3am to call my parents and then I can't concentrate in my 9am lecture" | Sleep disruption & living across time zones | 0.6014 | 0.2808 |
+
+Homesickness has the narrowest margin, which is worth watching when Feature 7 calibrates its relevance floor — it is the most diffusely worded pattern in the set.
+
+**Design decisions worth carrying forward:**
+- **A vector that cannot be trusted is flagged, not left looking healthy.** `needs_embedding` covers three cases — never embedded, a `--fake` placeholder, and a save whose OpenAI call failed (Feature 17). An unembedded pattern is invisible to retrieval with no error anywhere, which is precisely the silent failure this feature exists to prevent, so `db:verify` refuses to run while any exist rather than ranking noise.
+- **`embedding_model` is recorded because vectors from different models are not comparable.** Mixing them yields meaningless similarity scores rather than an error. The embedder also rejects a dimension mismatch up front, since Postgres would otherwise report it as "expected 1536 dimensions" far from the setting that caused it.
+- **The no-key path survives.** `db:seed -- --fake` still stands the database up with deterministic placeholders (a Feature 3 property), now recorded as `embedding_model='placeholder'` and flagged, so `db:reembed -- --stale` upgrades them later. Verified end to end: a fresh `db:reset -- --fake` → `db:verify` correctly *refuses* with the exact command to fix it → `db:reembed -- --stale` → `db:verify` passes.
+- **Only `situation` is embedded**, never the strategies. Matching compares a student's message to a description of a *situation*; embedding the counselor guidance too would pull the match toward advice language and quietly degrade it.
+- **Destructive scripts are now guarded to localhost.** `db:reset` runs `drop schema public cascade` against whatever `DATABASE_URL` points at, and `db:seed` upserts over the starter patterns by fixed UUID. Harmless while the only database was a local container; catastrophic once a hosted one holds the researcher's work. Both refuse a non-local host unless `-- --allow-remote` is passed, and fail closed on a connection string they cannot parse. Verified in both directions.
+- **Backups are text, not vectors.** `db:export:patterns` writes the authored fields to a JSON file and deliberately omits embeddings — 1536 floats per row would make the file unreadable and every diff meaningless, to store something one command regenerates.
+
+**Note on where the data lives from here.** Once Feature 17's admin tool is in use the **database is the source of truth** and `db/seeds/sample-care-patterns.ts` is only for bootstrapping a fresh environment. `db:export:patterns` writes the live set back to the repo as a version-controlled backup (Supabase's free tier keeps limited history), and `db:pull:patterns` copies hosted patterns *down* into local development — deliberately, rather than repointing `DATABASE_URL` upward, so a local dev session's test conversations never land in the researcher's live data.
 
 ## Feature 7: Retrieval & matching pipeline (RAG) 🟢
 The core differentiator: match the conversation to Care Patterns and steer the reply.
@@ -182,9 +216,11 @@ Answer common questions with zero LLM cost.
 **Depends on:** Feature 5.
 **AC:**
 1. A set of canned bilingual answers exists (e.g. "Is this confidential?", "How do I book a real counselor?", "Are you a real person?").
-2. These are stored as content (i18n/config file for v1; DB table optional) — **not** cached, not LLM-generated.
+2. These live in the `canned_responses` table — **not** cached, not LLM-generated. *(The "DB table optional" wording here is now settled: Feature 17 ships the editor for this table, so the content must be in the database rather than a config file.)*
 3. The chat UI shows **clickable quick-reply chips** that return the canned answer deterministically with no API call.
 4. Adding/editing a canned answer requires no model call and no matching logic.
+
+**Note:** the *authoring* half of this feature is delivered early by Feature 17, whose admin tool has a tab for `canned_responses`. What remains here is the student-facing half — surfacing the chips in the chat UI and returning the answer without an API call. Do not build a second editor.
 
 ## Feature 11: Booking nudge + "talk to a human" path 🟢
 The whole point of the funnel: convert trust into a booking.
@@ -207,6 +243,8 @@ The whole point of the funnel: convert trust into a booking.
 3. Sessions are secure (server-side; no secrets in the client); logout works.
 4. The chat flow branches on auth state (anonymous vs registered) per the architecture's flow diagram.
 5. The existing Login modal is wired to real auth (no longer a UI-only stub).
+
+**Note:** this is *student* auth and is deliberately unrelated to the admin login that Feature 17 already shipped. Students are anonymous-first with optional registration; admins are a closed list of two or three people in their own `admin_users` table. Reconciling them is optional, not required — check what Feature 17 built before adding a second session mechanism.
 
 ## Feature 13: Registration questionnaire → seeded initial match 🟢
 **Depends on:** Features 7, 12.
@@ -246,7 +284,7 @@ The whole point of the funnel: convert trust into a booking.
 4. No real PHI is ever written to the repo; sensitive stores are access-controlled.
 5. Logs are structured to be **labelable later** (enables the DS evaluation work).
 
-## Feature 17: Researcher admin tool for Care Patterns 🟢
+## Feature 17: Researcher admin tool for Care Patterns 🟡 (pulled forward — next)
 Let researchers author the knowledge base without engineering.
 **Depends on:** Features 3, 6.
 **AC:**
@@ -255,6 +293,17 @@ Let researchers author the knowledge base without engineering.
 3. Fields match the schema, including `source_refs` (paper citations).
 4. Access is restricted to researcher/admin roles.
 5. Changes are versioned/audited (who changed what, when).
+6. The same tool edits `canned_responses` (Feature 10's bilingual FAQ answers), which the Feature 3 schema already describes as DB-backed so non-engineers can change them without a deploy.
+
+**Why this moved from Phase 3 to now (2026-08-15).** A researcher joined to author the knowledge base, and there is no point building retrieval against placeholder content when the person who can write the real thing is available. The alternatives were both worse: direct database access would have her hand-editing `text[]` and `jsonb` columns and, far more seriously, leave `embedding` NULL on every row she created — a pattern that looks perfect in a table viewer and is **invisible to retrieval**, with no error anywhere.
+
+**Dify was evaluated and declined.** It was suggested as a free, ready-made authoring UI. Two findings settled it: its external-knowledge integration is **retrieval-only** ("Dify only has retrieval access to external knowledge bases. It cannot modify or manage your external content"), so it cannot author into our Postgres — the content would have to relocate into Dify — and the Q&A segmentation mode that maps closest to our situation→strategies structure is **self-hosted only**, which means running a nine-service stack rather than the one Fastify service this plan deploys. The document-chunk model would also flatten away `source_refs`, `escalation` and `locale_notes`. The embedding cost it would have saved is around a thousandth of a cent for the full starter set. Dify remains a reasonable prototyping surface for Feature 7's retrieval tuning; it is not the home for the knowledge base.
+
+**Deliberate deviations from the standing rules,** both scoped as narrowly as possible:
+- **Something deploys before Feature 21** — the hosted database, the API and the admin UI only. The student chat app stays on localhost and the GitHub Pages prototype is untouched.
+- **`POST /chat` is not served on the hosted admin instance** (`ENABLE_CHAT_ROUTES=false`). An open, unauthenticated, token-spending chat endpoint on the public internet is the one thing this slice must not create. It also means the hosted service cannot run up an OpenAI bill: its only upstream call is one embedding when someone clicks Save.
+
+Admin auth is deliberately **separate from Feature 12**: students are anonymous-first, admins are a closed list of two or three people, and coupling them would block this behind an unbuilt feature for no benefit.
 
 ## Feature 18: Home page & trust polish 🟢
 Make it credible for investors and users.
@@ -290,11 +339,13 @@ Make it credible for investors and users.
 ## Feature 21: Deployment to production hosting 🟢 (do this last)
 **Depends on:** everything above.
 **AC:**
-1. Frontend + backend deployed **on the same platform/domain** (Vercel / Netlify / Cloudflare) → same-origin API, simpler auth cookies.
-2. Managed Postgres (Supabase/Neon) provisioned; migrations run; env/secrets configured.
+1. Frontend + backend deployed **on the same platform/domain** → same-origin API, simpler auth cookies.
+2. Managed Postgres (**Supabase**, provisioned early — see below) with migrations run and env/secrets configured.
 3. Custom domain + HTTPS (e.g. `app.innersun.com`); optional: keep GitHub Pages for a static marketing page.
 4. A smoke test passes in production: register → chat → match → safety → nudge → (bilingual) all work.
 5. Rollback/redeploy process documented.
+
+**Partly done already.** The Feature 17 slice provisions Supabase, runs the migrations against it, stands the API up on Render with secrets configured, and documents redeploy/rollback in `docs/DEPLOYMENT.md` — so AC 2 and AC 5 arrive early, and AC 1 gets a rehearsal (the admin UI is already served by the API at the same origin). What genuinely remains here: deploying the **student-facing app**, turning `POST /chat` back on in a hosted environment with the rate limiting and abuse protection Feature 20 adds, the custom domain, and the full smoke test. Do not re-provision what already exists — check Supabase and Render first.
 
 ---
 

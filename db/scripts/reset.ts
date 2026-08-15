@@ -1,9 +1,13 @@
 // Drops and recreates the public schema, then re-applies all migrations and reseeds.
-// Useful for a clean slate without recreating the Docker volume. Destructive.
+// Useful for a clean slate without recreating the Docker volume.
+//
+// The most destructive command in the repo: it discards every row, including the
+// researcher-authored Care Patterns. Guarded to local databases only — see lib/guard.ts.
 
 import pg from "pg";
 import { fail } from "./lib/cli.js";
 import { getDatabaseUrl } from "./lib/env.js";
+import { assertLocalDatabase } from "./lib/guard.js";
 import { migrate } from "./migrate.js";
 import { seed } from "./seed.js";
 
@@ -21,6 +25,7 @@ async function dropSchema(): Promise<void> {
 }
 
 async function reset(): Promise<void> {
+  assertLocalDatabase(getDatabaseUrl(), "drop and recreate the schema");
   await dropSchema();
   await migrate();
   await seed();

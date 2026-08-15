@@ -179,7 +179,7 @@ flowchart TD
     何时建议预约真人。AI「知道」的一切都存在我们的数据库里，由我们的研究员掌控。虚线部分留待日后。</div>
 
   <div class="note eng"><span class="label">工程细节</span><br/>
-    编排器是一个轻量、无状态 (stateless) 的服务（Node 或 Python）。把 OpenAI 调用放在它背后同时带来三点好处：<b>安全</b>
+    编排器是一个轻量、无状态 (stateless) 的服务（<b>Node + TypeScript，基于 Fastify</b>）。把 OpenAI 调用放在它背后同时带来三点好处：<b>安全</b>
     （密钥不进入浏览器——目前的原型会泄露密钥，我们会在 v1 修复）、<b>成本可控</b>（集中做缓存、模型分级、Token 上限）、
     以及<b>可移植性</b>（模型供应商藏在同一接口之后——「用 OpenAI」只是一项配置，而非锁定）。</div>
 
@@ -262,8 +262,14 @@ flowchart LR
   </pre><div class="figcap">图 3 — 一次撰写；对话时检索（并完成冷启动）。</div></div>
 
   <p><b>关怀模式存在哪里：</b>带 <code>pgvector</code> 扩展的 <b>Postgres</b>。一个托管数据库
-    (Supabase / Neon / AWS RDS) 装下所有东西——模式文本、向量、用户、记忆、预约、预设答案——并具备真正的事务与统一备份。
+    装下所有东西——模式文本、向量、用户、记忆、预约、预设答案——并具备真正的事务与统一备份。
     以我们的规模无需单独的向量数据库 (Pinecone/Qdrant/Weaviate)；pgvector 可轻松应对数万条模式，日后若量级需要再迁移。</p>
+
+  <div class="note plain"><span class="label">托管方案：Supabase</span><br/>
+    于 2026-08-15 确定。本地开发用 Docker 的 <code>pgvector/pgvector:pg16</code> 镜像运行同样的数据库，
+    迁移脚本是纯 SQL，可在两者之间原样移植。Supabase 本就是架构默认的方向——schema 中的 <code>users</code>
+    表已预留了与其 <code>auth.users</code> 对接的考虑——因此在研究员后台工具需要托管时采用它，
+    意味着最终部署可以直接沿用这部分工作，而不必重做。</div>
 
   <p><b>关怀模式字段 (schema, v1)：</b><code>id/title</code> · <code>situation</code>（情境，用于嵌入→匹配）·
     <code>signals</code>（信号）· <code>strategies</code>（策略，→提示词）· <code>avoid</code>（禁忌）·
@@ -279,7 +285,14 @@ flowchart LR
 
   <div class="note eng"><span class="label">工程细节</span><br/>
     一条模式的向量在保存时<b>计算一次</b>并与该行一同存储——对话时绝不重算。新增第 200 条模式是纯粹的内容工作，无需改代码。
-    检索即 <code>ORDER BY embedding &lt;=&gt; :query_vector LIMIT N</code>。</div>
+    检索即 <code>ORDER BY embedding &lt;=&gt; :query_vector LIMIT N</code>。
+    <br/><br/>
+    「保存时算一次」有两个后果值得写明，因为它们都是<b>静默失败，而不是报错</b>。
+    没有向量的模式对检索而言是<b>不可见的</b>——这一行在任何数据库客户端里看起来都完全正常，
+    也不会有任何地方提示它检索不到。另外，<b>不同嵌入模型产生的向量之间不可比较</b>，
+    混用只会得出毫无意义的相似度分数，而不会报错。因此 schema 在向量旁边记录了来源信息：
+    由哪个模型生成、生成时间，以及一个标记该向量是否仍对应当前 <code>situation</code> 文本的标志位。
+    重新嵌入命令会清扫被标记的行，而校验脚本在仍存在此类行时会拒绝进行排序。</div>
 
   <h3>匹配到底是怎么工作的</h3>
   <div class="note plain"><span class="label">关键认知</span><br/>
@@ -459,9 +472,10 @@ flowchart LR
     <thead><tr><th>层</th><th>选型</th><th>原因</th></tr></thead>
     <tbody>
       <tr><td>客户端</td><td>React SPA + i18n（英文/中文，可扩展）</td><td>沿用现有原型；后续增加更多语言</td></tr>
-      <tr><td>后端</td><td>Node 或 Python 编排 API</td><td>密钥留在服务端；供应商可替换</td></tr>
+      <tr><td>后端</td><td>Node + TypeScript 编排 API（Fastify）</td><td>密钥留在服务端；供应商可替换；前后端同一种语言</td></tr>
       <tr><td>模型</td><td>OpenAI：gpt-4o（回复）、gpt-4o-mini（分类/安全/摘要）、text-embedding-3-small</td><td>按你的选择；分级控本</td></tr>
-      <tr><td>存储</td><td>Postgres + pgvector</td><td>关系型 + 向量一体存储</td></tr>
+      <tr><td>存储</td><td>Postgres + pgvector——本地 Docker，托管用 <b>Supabase</b></td><td>关系型 + 向量一体存储；纯 SQL 迁移可在两者间原样移植</td></tr>
+      <tr><td>内容撰写</td><td>由 API 以同源方式托管的研究员后台工具</td><td>非工程人员即可撰写知识库；保存时自动重新生成向量</td></tr>
       <tr><td>漏斗</td><td>排期 + 支付（如 Stripe）</td><td>真人预约＝收入</td></tr>
     </tbody>
   </table>

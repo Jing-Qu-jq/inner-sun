@@ -1,15 +1,20 @@
-// Deterministic PLACEHOLDER embeddings for Feature 3.
+// Deterministic PLACEHOLDER embeddings — a stable pseudo-vector derived from the text,
+// so the same input always yields the same output.
 //
-// Feature 3 only needs to prove that pgvector cosine search returns top-N against
-// seed rows — it does NOT need real semantics and must not require an OpenAI key to
-// stand up the database. So we derive a stable pseudo-embedding from the input text.
+// These are NOT semantic. Two patterns about the same topic get vectors as unrelated as
+// two about different ones, so ranking against them is arbitrary. That is why rows seeded
+// this way are flagged `needs_embedding` and why `db:verify` refuses to run while any
+// exist — a plausible-looking ranking over noise is worse than a clear refusal.
 //
-// The SAME text always yields the SAME vector, so verify.ts can embed a seed pattern's
-// own situation and expect that pattern back as the top hit (similarity ≈ 1.0).
-//
-// Feature 6 replaces these with real text-embedding-3-small vectors.
+// Feature 6 makes real text-embedding-3-small vectors the default (see embedding.ts).
+// This module survives as the `db:seed --fake` escape hatch, so the database can still
+// be stood up from scratch with no OpenAI key — a Feature 3 property worth keeping.
+// Rows seeded this way are recorded as embedding_model='placeholder' and flagged
+// needs_embedding, so `db:reembed --stale` upgrades them to real vectors later.
 
-export const EMBEDDING_DIM = 1536; // OpenAI text-embedding-3-small
+import { EMBEDDING_DIM } from "./vector.js";
+
+export { EMBEDDING_DIM } from "./vector.js";
 
 /** Small, fast, stable string hash (FNV-1a 32-bit). */
 function fnv1a(text: string): number {
@@ -51,9 +56,4 @@ export function fakeEmbedding(text: string, dim: number = EMBEDDING_DIM): number
     vec[i] = vec[i] / norm;
   }
   return vec;
-}
-
-/** Format a number[] as a pgvector literal, e.g. "[0.1,0.2,...]" for `$1::vector`. */
-export function toVectorLiteral(vec: number[]): string {
-  return `[${vec.join(",")}]`;
 }
