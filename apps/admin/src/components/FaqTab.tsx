@@ -9,6 +9,7 @@ import {
   type CannedResponse,
   type CannedResponseDraft,
 } from "../api";
+import ConfirmDialog from "./ConfirmDialog";
 
 const EMPTY: CannedResponseDraft = { key: "", question: {}, answer: {} };
 
@@ -26,6 +27,7 @@ export default function FaqTab() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [confirmRetire, setConfirmRetire] = useState<CannedResponse | null>(null);
 
   const selected = useMemo(
     () => (selectedId && selectedId !== "new" ? (items.find((i) => i.id === selectedId) ?? null) : null),
@@ -80,18 +82,32 @@ export default function FaqTab() {
     }
   }
 
-  async function toggleRetired(item: CannedResponse) {
+  // Only retiring asks. Restoring is the safe direction — it puts an answer back rather
+  // than taking one away — and confirming every state change trains people to dismiss the
+  // dialog without reading it, which is worse than not having one.
+  async function retire(item: CannedResponse) {
     setBusy(true);
     try {
-      if (item.isActive) {
-        await retireCannedResponse(item.id);
-      } else {
-        await restoreCannedResponse(item.id);
-      }
+      await retireCannedResponse(item.id);
+      setConfirmRetire(null);
       await refresh();
-      setNotice({ variant: "info", text: item.isActive ? "Retired." : "Restored." });
+      setNotice({ variant: "info", text: "Retired. Students will no longer be offered this answer." });
     } catch (err) {
-      setNotice({ variant: "warning", text: err instanceof Error ? err.message : "Could not update." });
+      setNotice({ variant: "warning", text: err instanceof Error ? err.message : "Could not retire." });
+      setConfirmRetire(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restore(item: CannedResponse) {
+    setBusy(true);
+    try {
+      await restoreCannedResponse(item.id);
+      await refresh();
+      setNotice({ variant: "info", text: "Restored." });
+    } catch (err) {
+      setNotice({ variant: "warning", text: err instanceof Error ? err.message : "Could not restore." });
     } finally {
       setBusy(false);
     }
@@ -101,7 +117,8 @@ export default function FaqTab() {
     setDraft({ ...draft, [half]: { ...draft[half], [locale]: value } });
 
   return (
-    <Row className="g-4">
+    <>
+      <Row className="g-4">
       <Col lg={4} xl={3}>
         <Card>
           <Card.Header className="d-flex align-items-center justify-content-between">
@@ -254,13 +271,14 @@ export default function FaqTab() {
                     {busy && <Spinner animation="border" size="sm" className="me-2" />}
                     {busy ? "Saving…" : "Save"}
                   </Button>
-                  {selected && (
-                    <Button
-                      variant={selected.isActive ? "outline-danger" : "outline-primary"}
-                      onClick={() => toggleRetired(selected)}
-                      disabled={busy}
-                    >
-                      {selected.isActive ? "Retire" : "Restore"}
+                  {selected && selected.isActive && (
+                    <Button variant="outline-danger" onClick={() => setConfirmRetire(selected)} disabled={busy}>
+                      Retire
+                    </Button>
+                  )}
+                  {selected && !selected.isActive && (
+                    <Button variant="outline-primary" onClick={() => restore(selected)} disabled={busy}>
+                      Restore
                     </Button>
                   )}
                 </div>
@@ -269,6 +287,25 @@ export default function FaqTab() {
           )}
         </Card>
       </Col>
-    </Row>
+      </Row>
+
+      <ConfirmDialog
+        show={confirmRetire !== null}
+        title="Retire this FAQ answer?"
+        body={
+          <>
+            <p>
+              <strong>{confirmRetire?.question.en || confirmRetire?.key}</strong> will stop being
+              offered to students immediately.
+            </p>
+            <p className="mb-0 text-secondary">Nothing is deleted — you can restore it at any time.</p>
+          </>
+        }
+        confirmLabel="Retire"
+        busy={busy}
+        onConfirm={() => confirmRetire && retire(confirmRetire)}
+        onCancel={() => setConfirmRetire(null)}
+      />
+    </>
   );
 }
