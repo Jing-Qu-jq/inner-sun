@@ -20,7 +20,7 @@ let client: OpenAI | undefined;
  * and serve /health when the key is missing, and validateConfig() is what
  * reports that clearly at startup.
  */
-function getClient(): OpenAI {
+export function getClient(): OpenAI {
   if (!config.openai.apiKey) {
     throw new AppError(503, "ai_not_configured", "The assistant is not configured right now.");
   }
@@ -100,7 +100,7 @@ export async function createChatCompletion(options: ChatCompletionOptions): Prom
  * Map an OpenAI SDK error to a client-safe AppError, preserving the original as
  * `cause` so the full detail still reaches the server log.
  */
-function toAppError(err: unknown): AppError {
+export function toAppError(err: unknown): AppError {
   const generic = "The assistant is temporarily unavailable. Please try again in a moment.";
 
   if (err instanceof APIConnectionTimeoutError) {

@@ -129,6 +129,11 @@ scripts/lib/         Shared helpers: env, embedding, vector, guard, CLI args
 - **Only `situation` is embedded.** A student's message is matched against a description of
   a *situation*, never against the counselor guidance that situation calls for — embedding
   the strategies too would pull the match toward advice language and degrade it.
+- **`status` gates retrieval, and new patterns are drafts.** A pattern is `draft` until
+  someone publishes it, so writing one never puts it in front of a student by itself; only
+  `published` rows are retrieved, and `retired` ones stay readable and restorable. The seed
+  sets `status` explicitly rather than relying on the default, so nothing becomes
+  retrievable by omission.
 - **`needs_embedding` marks a row whose vector cannot be trusted** — never embedded, left
   over from a failed save, or a `--fake` placeholder. Such a row is invisible to retrieval,
   which is a silent failure, so it is flagged rather than left looking healthy.

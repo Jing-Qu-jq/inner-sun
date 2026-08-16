@@ -7,13 +7,18 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json && npm run copy:prompts",
+    "build": "tsc -p tsconfig.json && npm run copy:prompts && npm run copy:admin",
     "copy:prompts": "mkdir -p dist/prompts && cp src/prompts/*.md dist/prompts/",
     "start": "node dist/index.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "admin:create": "tsx src/scripts/create-admin.ts",
+    "copy:admin": "rm -rf dist/public && if [ -d ../../apps/admin/dist ]; then mkdir -p dist/public && cp -R ../../apps/admin/dist/. dist/public/; else echo 'note: admin bundle not built (npm run build:admin)'; fi"
   },
   "dependencies": {
+    "@fastify/cookie": "^9.4.0",
     "@fastify/cors": "^9.0.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/static": "^7.0.4",
     "@innersun/shared": "*",
     "dotenv": "^16.4.5",
     "fastify": "^4.28.1",

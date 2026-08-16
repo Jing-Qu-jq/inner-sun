@@ -206,7 +206,15 @@ at our scale; pgvector handles tens of thousands of patterns comfortably, and we
 
 **Care Pattern schema (v1):** `id/title` · `situation` (embedded → matching) · `signals` ·
 `strategies` (→ prompt) · `avoid` · `escalation` · `source_refs` (research-paper citations) ·
-`locale notes`. Authored in **English** (see Language below).
+`locale notes` · `status`. Authored in **English** (see Language below).
+
+**Publication is deliberate.** A pattern moves through `draft` → `published` → `retired`, and
+**only `published` is ever retrieved**. A newly written pattern is a draft, so authoring one
+does not put it in front of students until someone chooses to publish it — the default state
+is the harmless one, and forgetting to act leaves a pattern unpublished rather than a
+half-finished thought in front of someone in distress. Retiring is a soft withdrawal that
+keeps the row, its history and the option to restore it, because clinical guidance that
+turned out to be wrong is something you want the record of.
 
 **Cold start (two on-ramps):**
 - **Registered → questionnaire.** 5–8 short, warm, mostly multiple-choice questions at sign-up seed

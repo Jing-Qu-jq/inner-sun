@@ -1,0 +1,76 @@
+/* Custom styling for the admin tool — deliberately thin.
+ *
+ * react-bootstrap does the layout, controls, dialogs and dark mode. What is left here is
+ * the brand accent (kept byte-identical to apps/web so the two apps read as one product)
+ * and the two or three things Bootstrap genuinely has no component for.
+ *
+ * Bootstrap 5.3's own `data-bs-theme` attribute handles light/dark; it is set on <html>
+ * from prefers-color-scheme by the inline script in index.html, so there is no flash of
+ * the wrong theme before React mounts. */
+
+:root {
+  --is-sun-start: #ff9a4d;
+  --is-sun-end: #ffd28a;
+
+  /* Coordinate Bootstrap's theme with the brand — same values as apps/web/src/App.css. */
+  --bs-primary: #ff9a4d;
+  --bs-primary-rgb: 255, 154, 77;
+  --bs-link-color: #e07e28;
+  --bs-link-color-rgb: 224, 126, 40;
+  --bs-link-hover-color: #c96c1f;
+}
+
+/* Recolor Bootstrap's primary buttons to the sun accent (matching apps/web). */
+.btn-primary {
+  --bs-btn-bg: #ff9a4d;
+  --bs-btn-border-color: #ff9a4d;
+  --bs-btn-hover-bg: #f2892f;
+  --bs-btn-hover-border-color: #f2892f;
+  --bs-btn-active-bg: #e07e28;
+  --bs-btn-active-border-color: #e07e28;
+  --bs-btn-focus-shadow-rgb: 255, 154, 77;
+  --bs-btn-color: #fff;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-color: #fff;
+}
+
+/* Bootstrap 5.3 compiles each component's "active" colour to a literal hex at build time
+ * rather than referencing var(--bs-primary), so overriding the theme colour above does not
+ * reach them — pills and selected list rows stay Bootstrap blue. These target the
+ * component-level variables directly, which is the same reason apps/web has to override
+ * .btn-primary explicitly rather than relying on --bs-primary alone. */
+.nav-pills {
+  --bs-nav-pills-link-active-bg: var(--is-sun-start);
+  --bs-nav-pills-link-active-color: #21160a;
+}
+
+/* A solid fill fights the secondary text and status badges sitting inside each row, so the
+ * selected pattern gets a tint and an accent edge instead of a block of colour. */
+.list-group-item.active {
+  --bs-list-group-active-bg: rgba(255, 154, 77, 0.16);
+  --bs-list-group-active-color: var(--bs-body-color);
+  --bs-list-group-active-border-color: var(--bs-list-group-border-color);
+  box-shadow: inset 3px 0 0 var(--is-sun-start);
+}
+
+/* The InnerSun mark. A gradient dot is not something a component library provides. */
+.brand-dot {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, var(--is-sun-end), var(--is-sun-start));
+  flex: 0 0 auto;
+}
+
+/* The pattern list can run long; keep the editor beside it rather than below the fold. */
+.pattern-list {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+
+/* Long-form clinical text is read as much as it is written, so give it a comfortable
+   measure and line height rather than Bootstrap's denser form defaults. */
+.prose-field {
+  line-height: 1.55;
+}

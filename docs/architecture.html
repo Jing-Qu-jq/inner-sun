@@ -282,7 +282,16 @@ flowchart LR
 
   <p><b>Care Pattern schema (v1):</b> <code>id/title</code> · <code>situation</code> (embedded → matching) ·
     <code>signals</code> · <code>strategies</code> (→ prompt) · <code>avoid</code> · <code>escalation</code> ·
-    <code>source_refs</code> (research-paper citations) · <code>locale notes</code>. Authored in <b>English</b>.</p>
+    <code>source_refs</code> (research-paper citations) · <code>locale notes</code> · <code>status</code>.
+    Authored in <b>English</b>.</p>
+
+  <p><b>Publication is deliberate.</b> A pattern moves through <code>draft</code> → <code>published</code> →
+    <code>retired</code>, and <b>only published patterns are ever retrieved</b>. A newly written pattern is a
+    draft, so authoring one does not put it in front of students until someone chooses to publish it — the
+    default state is the harmless one, and forgetting to act leaves a pattern unpublished rather than a
+    half-finished thought in front of someone in distress. Retiring is a soft withdrawal that keeps the row,
+    its history and the option to restore it, because clinical guidance that turned out to be wrong is
+    something you want the record of.</p>
 
   <p><b>Cold start (two on-ramps):</b></p>
   <ul>

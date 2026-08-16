@@ -72,25 +72,25 @@ async function verify(): Promise<void> {
               count(*) filter (where embedding is null or needs_embedding
                                   or embedding_model is distinct from $1) as unusable
          from care_patterns
-        where is_active`,
+        where status = 'published'`,
       [model],
     );
     const total = Number(health[0].total);
     const unusable = Number(health[0].unusable);
 
     if (total === 0) {
-      throw new Error("No active care_patterns found — run `npm run db:seed` first.");
+      throw new Error("No published care_patterns found — run `npm run db:seed` first.");
     }
     if (unusable > 0) {
       throw new Error(
-        `${unusable} of ${total} active pattern(s) lack a usable ${model} embedding ` +
+        `${unusable} of ${total} published pattern(s) lack a usable ${model} embedding ` +
           "(never embedded, flagged after a failed save, or seeded with --fake placeholders).\n" +
           "Semantic ranking is meaningless until they are embedded for real:\n" +
           "  npm run db:reembed -- --stale",
       );
     }
 
-    console.log(`Semantic retrieval check — ${total} active pattern(s), model ${model}\n`);
+    console.log(`Semantic retrieval check — ${total} published pattern(s), model ${model}\n`);
 
     const failures: string[] = [];
 
@@ -100,7 +100,7 @@ async function verify(): Promise<void> {
       const { rows } = await client.query<Hit>(
         `select id, title, 1 - (embedding <=> $1::vector) as similarity
            from care_patterns
-          where embedding is not null and is_active
+          where embedding is not null and status = 'published'
           order by embedding <=> $1::vector
           limit $2`,
         [toVectorLiteral(vector), TOP_N],

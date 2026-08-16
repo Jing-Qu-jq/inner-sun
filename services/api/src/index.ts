@@ -1,10 +1,31 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
 import type { ApiError, HealthResponse } from "@innersun/shared";
 import { config, isProduction, validateConfig } from "./config.js";
 import { isDbReachable, pool } from "./db.js";
 import { isAppError } from "./errors.js";
+import { registerAdminRoutes } from "./routes/admin.js";
+import { registerAdminFaqRoutes } from "./routes/admin-faq.js";
 import { registerChatRoutes } from "./routes/chat.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Where the built admin app lives. Production copies it into dist/public during the API
+ * build; in development it is served straight out of the Vite output so `npm run build:admin`
+ * once is enough to exercise the real same-origin setup rather than a dev-server proxy.
+ * Returns undefined when neither exists, which is normal before the first admin build.
+ */
+function findAdminBundle(): string | undefined {
+  const candidates = [join(here, "public"), join(here, "..", "..", "..", "apps", "admin", "dist")];
+  return candidates.find((path) => existsSync(join(path, "index.html")));
+}
 
 const pkgVersion = "0.1.0";
 
@@ -38,6 +59,10 @@ export function buildServer() {
   });
 
   app.register(cors, { origin: config.webOrigin });
+  app.register(cookie);
+  // Opt-in rather than global: only the credential-checking routes are limited, so a
+  // researcher saving twenty patterns in a burst is never throttled for it.
+  app.register(rateLimit, { global: false });
 
   // Health check — confirms the service is up and reports DB connectivity (Feature 3).
   app.get("/health", async (): Promise<HealthResponse> => {
@@ -45,8 +70,26 @@ export function buildServer() {
     return { status: "ok", service: "@innersun/api", version: pkgVersion, db };
   });
 
-  // POST /chat — the orchestrator (Feature 4).
-  app.register(registerChatRoutes);
+  // POST /chat — the orchestrator (Feature 4). Deliberately absent on the hosted admin
+  // instance; see config.enableChatRoutes for why. When off, /chat falls through to the
+  // 404 handler exactly as an unknown route would.
+  if (config.enableChatRoutes) {
+    app.register(registerChatRoutes);
+  } else {
+    app.log.warn("POST /chat is disabled (ENABLE_CHAT_ROUTES=false) — admin-only instance");
+  }
+
+  // Researcher admin tool (Feature 17): API under /admin/api, and the built UI at /admin
+  // from the same origin, so the session cookie needs no cross-site handling.
+  app.register(registerAdminRoutes);
+  app.register(registerAdminFaqRoutes);
+
+  const adminBundle = findAdminBundle();
+  if (adminBundle) {
+    app.register(fastifyStatic, { root: adminBundle, prefix: "/admin", redirect: true });
+  } else {
+    app.log.warn("Admin UI bundle not found — run `npm run build:admin`. The /admin/api routes still work.");
+  }
 
   // Close the DB pool when the server shuts down.
   app.addHook("onClose", async () => {

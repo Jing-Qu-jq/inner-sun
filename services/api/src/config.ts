@@ -49,6 +49,18 @@ export const config = {
   databaseUrl: optional("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/innersun"),
 
   /**
+   * Whether to serve POST /chat (Feature 17).
+   *
+   * On by default, because that endpoint is the product. It is switched OFF on the hosted
+   * admin instance, where the only job is letting researchers author Care Patterns: an
+   * open, unauthenticated, token-spending chat endpoint on the public internet is the one
+   * thing that deployment must not create. With it off, the hosted service cannot run up
+   * an OpenAI bill — its sole upstream call is one embedding when someone clicks Save.
+   * Feature 21 turns it back on behind the abuse protection Feature 20 adds.
+   */
+  enableChatRoutes: optional("ENABLE_CHAT_ROUTES", "true").toLowerCase() !== "false",
+
+  /**
    * OpenAI (Feature 4). The key is read here and nowhere else, and never leaves
    * this process — the browser talks to our /chat endpoint, not to OpenAI.
    */

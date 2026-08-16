@@ -56,7 +56,7 @@ async function pullPatterns(): Promise<void> {
         await local.query(
           `insert into care_patterns
              (id, title, situation, signals, strategies, avoid, escalation, source_refs,
-              locale_notes, is_active, needs_embedding)
+              locale_notes, status, needs_embedding)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, true)
            on conflict (id) do update set
              title = excluded.title,
@@ -67,7 +67,7 @@ async function pullPatterns(): Promise<void> {
              escalation = excluded.escalation,
              source_refs = excluded.source_refs,
              locale_notes = excluded.locale_notes,
-             is_active = excluded.is_active,
+             status = excluded.status,
              needs_embedding = true`,
           [
             r.id,
@@ -79,7 +79,7 @@ async function pullPatterns(): Promise<void> {
             r.escalation,
             r.source_refs,
             JSON.stringify(r.locale_notes ?? {}),
-            r.is_active,
+            r.status,
           ],
         );
       }

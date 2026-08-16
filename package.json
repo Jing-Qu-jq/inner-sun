@@ -26,7 +26,10 @@
     "db:verify": "npm run verify --workspace @innersun/db",
     "db:reembed": "npm run reembed --workspace @innersun/db --",
     "db:export:patterns": "npm run export:patterns --workspace @innersun/db --",
-    "db:pull:patterns": "npm run pull:patterns --workspace @innersun/db --"
+    "db:pull:patterns": "npm run pull:patterns --workspace @innersun/db --",
+    "build:admin": "npm run build --workspace @innersun/admin",
+    "dev:admin": "npm run dev --workspace @innersun/admin",
+    "admin:create": "npm run admin:create --workspace @innersun/api --"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
