@@ -19,7 +19,14 @@ services:
 
     # The whole monorepo is built: shared types, then the admin bundle, then the API —
     # whose build step copies that bundle into dist/public to be served.
-    buildCommand: npm ci && npm run build:shared && npm run build:admin && npm run build:api
+    #
+    # `--include=dev` is load-bearing. NODE_ENV=production below is wanted at RUNTIME (it
+    # drives the secure cookie flag and the logger), but npm also reads it at install time
+    # and omits devDependencies — which is where the entire toolchain lives: vite,
+    # @vitejs/plugin-react, typescript, the type packages. Without this the build fails
+    # part-way through with "Cannot find module 'vite'", which reads like a missing
+    # dependency rather than an install that deliberately skipped it.
+    buildCommand: npm ci --include=dev && npm run build:shared && npm run build:admin && npm run build:api
     startCommand: node services/api/dist/index.js
 
     # Render polls this to decide whether a deploy is healthy. It reports database
