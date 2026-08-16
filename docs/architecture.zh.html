@@ -273,7 +273,14 @@ flowchart LR
 
   <p><b>关怀模式字段 (schema, v1)：</b><code>id/title</code> · <code>situation</code>（情境，用于嵌入→匹配）·
     <code>signals</code>（信号）· <code>strategies</code>（策略，→提示词）· <code>avoid</code>（禁忌）·
-    <code>escalation</code>（升级）· <code>source_refs</code>（研究文献引用）· <code>locale notes</code>。以<b>英文</b>撰写。</p>
+    <code>escalation</code>（升级）· <code>source_refs</code>（研究文献引用）· <code>locale notes</code> ·
+    <code>status</code>（状态）。以<b>英文</b>撰写。</p>
+
+  <p><b>发布是一个明确的动作。</b>一条模式会经历 <code>draft</code>（草稿）→ <code>published</code>（已发布）→
+    <code>retired</code>（已下线）三种状态，而<b>只有已发布的模式才会被检索</b>。新写的模式默认是草稿，
+    因此撰写本身不会把它推到学生面前，必须有人主动点击发布。这样默认状态就是无害的那一个：
+    一旦疏忽，结果是模式没有发布，而不是让一段没写完的内容出现在正处于困境的学生面前。
+    下线是一种软撤回，会保留记录、历史与恢复的可能——事后被证明有问题的临床指导，恰恰是最需要留痕的。</p>
 
   <p><b>冷启动（两条入口）：</b></p>
   <ul>

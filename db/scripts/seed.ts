@@ -105,10 +105,15 @@ export async function seed(): Promise<void> {
       const update = updates.get(p.id) ?? { vector: null, model: null, embeddedAt: null, needsEmbedding: false };
 
       await client.query(
+        // `status` is set explicitly rather than left to the column default, which is
+        // 'draft' (migration 0004). The starter set is what the retrieval checks match
+        // against, so it has to be live — but publishing is a deliberate act everywhere,
+        // including here, so that nothing becomes retrievable by omission.
         `insert into care_patterns
            (id, title, situation, signals, strategies, avoid, escalation, source_refs, locale_notes,
-            embedding, embedding_model, embedded_at, needs_embedding)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, $12::timestamptz, $13)
+            embedding, embedding_model, embedded_at, needs_embedding, status)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, $12::timestamptz, $13,
+                 'published')
          on conflict (id) do update set
            title = excluded.title,
            situation = excluded.situation,

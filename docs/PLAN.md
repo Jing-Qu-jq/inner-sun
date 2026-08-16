@@ -284,16 +284,41 @@ The whole point of the funnel: convert trust into a booking.
 4. No real PHI is ever written to the repo; sensitive stores are access-controlled.
 5. Logs are structured to be **labelable later** (enables the DS evaluation work).
 
-## Feature 17: Researcher admin tool for Care Patterns 🟡 (pulled forward — next)
+## Feature 17: Researcher admin tool for Care Patterns 🟡 (built & verified locally — hosting outstanding)
 Let researchers author the knowledge base without engineering.
 **Depends on:** Features 3, 6.
-**AC:**
-1. An authenticated **admin UI** (or protected route) lists, creates, edits, and retires Care Patterns.
-2. Saving a pattern **re-embeds** its `situation` automatically.
-3. Fields match the schema, including `source_refs` (paper citations).
-4. Access is restricted to researcher/admin roles.
-5. Changes are versioned/audited (who changed what, when).
-6. The same tool edits `canned_responses` (Feature 10's bilingual FAQ answers), which the Feature 3 schema already describes as DB-backed so non-engineers can change them without a deploy.
+
+**AC (all met — verified in a real browser against a live database and live OpenAI, 2026-08-15):**
+1. ✅ A password-protected admin UI at `/admin` lists, creates, edits, publishes, retires and restores Care Patterns. Patterns move through a **`draft` → `published` → `retired`** lifecycle (migration 0004), and **a new pattern is a draft**: writing one does not put it in front of students until Publish is pressed. Retiring is a soft withdrawal — the row stays readable, auditable and restorable, because clinical guidance that turned out to be wrong is something you want the history of.
+2. ✅ Saving re-embeds `situation` automatically — **and only when it changed.** Verified by comparing `embedded_at` across saves: editing the strategies left it byte-identical (`embeddingStatus: "unchanged"`) while rewriting the situation produced a new timestamp. Editing everything except the situation is therefore free, which is what a researcher does most.
+3. ✅ Every schema field is editable, with the `text[]` columns rendered as repeatable line items rather than array literals, and `locale_notes` as a Chinese cultural-note field. `source_refs` is a first-class field.
+4. ✅ Unauthenticated requests to `/admin/api/*` return `401`. Accounts exist only via `npm run admin:create`; there is no signup route.
+5. ✅ Every mutation writes a `care_pattern_revisions` row **in the same transaction as the change**, so an edit cannot happen without a record. The UI shows who did what and which fields changed.
+6. ✅ A second tab edits `canned_responses` bilingually; a 中文 answer edit was confirmed persisted by re-reading it from the server.
+
+**Built with react-bootstrap, converted 2026-08-16.** The first cut used plain semantic HTML and a hand-written stylesheet, on the reasoning that an internal forms-and-lists tool did not need a component library. The user chose consistency with `apps/web` instead, and the conversion paid for itself immediately by surfacing three defects the hand-rolled version had: the custom tabs declared `role="tablist"` and `aria-selected` but had **no arrow-key navigation**; destructive actions had **no confirmation dialog**, because hand-rolling a modal properly is fiddly enough to skip; and one click on Retire withdrew a pattern from students with nothing in between.
+
+Retiring — a Care Pattern or an FAQ answer — now opens a confirmation naming the item, stating that it stops reaching students immediately, and noting that nothing is deleted and it can be brought back. Restoring deliberately does *not* confirm: it is the safe direction, and confirming every state change trains people to dismiss the dialog without reading it, which is worse than not having one. Two Bootstrap gotchas worth remembering: **Bootstrap 5.3 compiles each component's "active" colour to a literal hex at build time**, so overriding `--bs-primary` leaves nav pills and selected list rows Bootstrap blue — the component-level variables have to be set directly, which is the same reason `apps/web` overrides `.btn-primary` explicitly. And **a `Nav` nested inside a `Navbar` picks up the Navbar's select context rather than `Tab.Container`'s**, so `onSelect` never fires and tab switching silently stops working; the tabs sit below the navbar instead. Both were caught only by looking at the running page.
+
+**Draft-by-default, decided 2026-08-16.** The first cut published a pattern the instant it was saved, and the plan was to add a draft state at deployment time, when there would actually be students to protect. The user overruled that: a safety default that depends on someone remembering to change it later is one that does not get changed. It was implemented immediately instead.
+
+The change is a three-state `status` column replacing the boolean `is_active`, not merely a flipped default — with a boolean, `false` would have meant two unrelated things ("not written yet" and "withdrawn because it was wrong"), the UI would have had to label a brand-new draft "retired", and nothing could tell them apart when reviewing the library. Two consequences worth carrying: **the seed sets `status` explicitly** rather than relying on the column default, so the starter set is live by deliberate choice and nothing becomes retrievable by omission; and **publishing an unindexed pattern is refused with a 409**, since a `published` row with no usable vector would look live while being unreachable — the same silent failure `needs_embedding` exists to prevent. Verified end to end: a new pattern came back `draft` and left `db:verify` at 12 published, publishing moved it to 13, the audit recorded `create` then `publish`, and a pattern flagged `needs_embedding` was refused publication.
+
+**Still outstanding: the tool is not yet reachable by the researcher.** Everything above is verified on localhost. Standing it up on Supabase + Render is the next PR, and only then is the feature actually delivering its purpose.
+
+**Two deviations from the approved plan, both to avoid native dependencies on a free-tier host:**
+- **Passwords use scrypt from Node core, not Argon2id.** Argon2id is the stronger default, but every Node binding is a native module, and a missing prebuilt binary on Render is an opaque startup crash for whoever is on call. scrypt is memory-hard, in the standard library, and ample against three accounts behind rate limiting. The stored hash format is self-describing (`scrypt$N$r$p$salt$key`) so raising the parameters — or moving to Argon2id — does not invalidate existing accounts.
+- **Sessions are server-side rows, not a signed stateless cookie** (and so no `SESSION_SECRET` is needed). The cookie carries a random opaque token; the database stores only its SHA-256 hash. The reason is revocation: a stateless token stays valid until it expires no matter what the server thinks, so "sign out" would be a suggestion. Verified by replaying the exact cookie after logout — `401`. Deactivating an account also takes effect immediately, because `is_active` is checked per request rather than captured at login.
+
+**Design decisions worth carrying forward:**
+- **A failed embedding does not fail the save.** Losing a researcher's writing to an OpenAI blip would be the worse outcome, so the pattern is stored and flagged `needs_embedding`, and the UI says plainly that it is *not searchable* until indexed — a red badge in the list and a banner in the editor. Verified end to end by pointing `OPENAI_BASE_URL` at a dead port: the title and strategies were saved intact, the flag appeared, and pressing Save once OpenAI was reachable cleared it.
+- **The temporary password is enforced away at the API, not just the UI.** `admin:create` generates the password (never accepts one as an argument, where it would land in shell history and the process list) and flags the account. Every route that does real work returns `403 password_change_required` until it is replaced — otherwise a client that skipped the change-password screen could keep using the weakest credential the account will ever have indefinitely.
+- **Login failures are indistinguishable.** Wrong email, wrong password and deactivated account return the same message, and a decoy hash is verified when the email does not exist so response time cannot be used to discover which addresses have accounts.
+- **The admin UI is served by the API itself at the same origin**, so the session cookie needs no CORS or cross-site handling — and Feature 21's "frontend beside backend" gets a rehearsal.
+
+**A defect found during runtime verification, in the same family as Features 3–5.** With the database stopped, admin routes returned a bare `500` — Feature 5 had established that a database outage is a deliberate `503`, but that mapping lived privately inside `conversations.ts` and the new code had no access to it. It is now a shared `dbQuery`/`dbConnect` pair in `db.ts` that every admin query goes through. Worth noting that this only surfaced because the Postgres container happened to stop mid-session; no static check would have found it.
+
+**A UI defect found the same way:** the revision panel fetched history keyed only on the pattern id, so after saving it kept showing the pre-save list. The new revision *was* recorded — but for an audit trail, "my change isn't listed" reads as "my change wasn't logged". It now also keys on the pattern's `updatedAt`.
 
 **Why this moved from Phase 3 to now (2026-08-15).** A researcher joined to author the knowledge base, and there is no point building retrieval against placeholder content when the person who can write the real thing is available. The alternatives were both worse: direct database access would have her hand-editing `text[]` and `jsonb` columns and, far more seriously, leave `embedding` NULL on every row she created — a pattern that looks perfect in a table viewer and is **invisible to retrieval**, with no error anywhere.
 
@@ -330,7 +355,23 @@ Make it credible for investors and users.
 2. Input validation and safe error handling across the API.
 3. Secrets managed via env/secret store; no secrets in code or client.
 4. Automated tests for the critical paths (matching, safety screening, auth).
-5. A basic CI check (lint + build + tests) passes.
+5. A basic CI check (**format** + lint + build + tests) passes.
+6. `apps/web` consumes the shared API types — see below.
+7. A shared **Prettier config** at the repo root, with `npm run format` and a `--check` gate in CI — see below.
+
+**Code formatting is convention-only today.** There is no `.prettierrc`, no Prettier in any `package.json`, and no format script anywhere in the monorepo. Every file matches its neighbours because whoever wrote it matched them by hand, which holds right up until it doesn't: running `npx prettier --write` on a single file during Feature 17 reformatted it to Prettier's default 80 columns while its siblings sat at roughly 110, turning a fifteen-line change into a seventy-line diff. That edit was reverted, but the trap stays armed for anyone who reaches for a formatter out of habit.
+
+Low urgency at two contributors and rising sharply with a third, because the cost is not ugly code — it is **review noise that hides real changes**, and merge conflicts in files nobody meaningfully edited.
+
+**Scope it small:** one `.prettierrc` at the root (the existing style is roughly `printWidth: 110`, double quotes, trailing commas — match what is already there rather than accepting defaults and reflowing the whole repo), a `.prettierignore` covering `dist`, `build` and `package-lock.json`, a root `format` script, and `prettier --check` in the CI job. Reformat everything in **one dedicated commit** so it can be skipped wholesale with `git blame --ignore-rev`; mixing a repo-wide reflow into a feature commit destroys that file's history for everyone afterwards.
+
+**Carried debt: `apps/web` is the only JavaScript workspace.** It is the original prototype, and Feature 1 deliberately scaffolded the monorepo *around* it rather than rewriting it — the priority then was fixing bugs and moving the OpenAI key server-side. Everything built since (`packages/shared`, `services/api`, `db`, `apps/admin`) is TypeScript, per the stack decision at the top of this plan.
+
+The concrete cost is narrow but real: **`apps/web` cannot reference `@innersun/shared`**, because a `.js` file cannot consume the types it ships. That makes `apps/web/src/fetchers/ConversationFetcher.js` the one place in the system where the API contract is not enforced — change `ChatResponse` in `shared` and the API and admin app both fail to compile, while the browser breaks silently at runtime. Feature 5 verified that boundary by hand in a real browser; nothing prevents it regressing.
+
+Not urgent while the contract is three fields, and riskier from Feature 13 (questionnaire payloads) and Feature 14 (memory) onward, where the shapes grow.
+
+**Scope it small.** Create React App supports TypeScript incrementally — add `typescript` and a `tsconfig.json` and `.js` and `.tsx` coexist, so files convert one at a time. Convert **`ConversationFetcher` alone** first: it is the only file where typing prevents a real bug, and it is roughly twenty minutes. The presentational components can stay `.js` indefinitely at no cost. A wholesale 23-file rewrite is not the goal and should not be treated as a prerequisite for this feature.
 
 ---
 

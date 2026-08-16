@@ -7,7 +7,7 @@
 
 /** Columns every Care Pattern script selects. Kept as one string so they cannot drift. */
 export const CARE_PATTERN_COLUMNS =
-  "id, title, situation, signals, strategies, avoid, escalation, source_refs, locale_notes, is_active";
+  "id, title, situation, signals, strategies, avoid, escalation, source_refs, locale_notes, status";
 
 /** A `care_patterns` row as pg returns it (snake_case, arrays already parsed). */
 export interface CarePatternRow {
@@ -20,7 +20,7 @@ export interface CarePatternRow {
   escalation: string;
   source_refs: string[];
   locale_notes: Record<string, string>;
-  is_active: boolean;
+  status: "draft" | "published" | "retired";
 }
 
 /** The camelCase form written to the export file — matches the seed file's shape. */
@@ -34,7 +34,7 @@ export interface ExportedCarePattern {
   escalation: string;
   sourceRefs: string[];
   localeNotes: Record<string, string>;
-  isActive: boolean;
+  status: "draft" | "published" | "retired";
 }
 
 export function toExported(row: CarePatternRow): ExportedCarePattern {
@@ -48,6 +48,6 @@ export function toExported(row: CarePatternRow): ExportedCarePattern {
     escalation: row.escalation,
     sourceRefs: row.source_refs,
     localeNotes: row.locale_notes ?? {},
-    isActive: row.is_active,
+    status: row.status,
   };
 }

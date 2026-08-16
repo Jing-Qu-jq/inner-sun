@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Internal tool: keep it out of search results even if the host is public. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>InnerSun — Care Pattern Admin</title>
+    <script>
+      // Bootstrap 5.3 reads light/dark from this attribute. Set before first paint so the
+      // page never flashes the wrong theme while the bundle loads.
+      (function () {
+        var query = window.matchMedia("(prefers-color-scheme: dark)");
+        function apply() {
+          document.documentElement.setAttribute("data-bs-theme", query.matches ? "dark" : "light");
+        }
+        apply();
+        query.addEventListener("change", apply);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

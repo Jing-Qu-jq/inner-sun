@@ -14,6 +14,12 @@ build
 .idea/
 .DS_Store
 
+# Claude Code: personal machine settings stay local; launch.json is shared dev config
+.claude/settings.local.json
+
 # logs
 *.log
 npm-debug.log*
+
+# TypeScript incremental build cache
+*.tsbuildinfo
