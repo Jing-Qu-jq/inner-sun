@@ -1,5 +1,7 @@
 // Consistent, useful error output for the db CLI scripts.
 
+import { explainTlsError } from "./pg.js";
+
 interface ErrorLike {
   message?: string;
   code?: string;
@@ -36,7 +38,10 @@ function errorMessage(err: unknown): string {
 
 /** Print a helpful failure message (with a hint if the DB is unreachable) and exit 1. */
 export function fail(context: string, err: unknown): never {
-  console.error(`${context}: ${errorMessage(err)}`);
+  // A certificate failure's default message names the symptom and nothing else, so it is
+  // replaced with one that names the fix.
+  console.error(`${context}: ${explainTlsError(err) ?? errorMessage(err)}`);
+
   if (errorCode(err) === "ECONNREFUSED") {
     console.error("Could not reach PostgreSQL. Is it running? Start it with:  npm run db:up");
   }

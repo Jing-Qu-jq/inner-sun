@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import pg from "pg";
 import type { PoolClient, QueryResultRow } from "pg";
 import { config } from "./config.js";
@@ -7,15 +8,42 @@ import { AppError } from "./errors.js";
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 
 /**
- * TLS is decided here from the host rather than left to `pg` to infer from `sslmode` in
- * the connection string: that parsing has changed across pg versions, and a string pasted
- * from a provider's dashboard may or may not carry the parameter. A hosted database
- * (Supabase) requires TLS; a local Docker container does not offer it.
+ * `DATABASE_SSL_CA` is either the PEM text itself — which is what a hosting platform makes
+ * easy, since it takes environment variables but not files — or a path to a file.
+ */
+function readCa(): string | undefined {
+  const value = process.env.DATABASE_SSL_CA;
+  if (!value) return undefined;
+  if (value.includes("-----BEGIN CERTIFICATE-----")) return value;
+  return readFileSync(value, "utf8");
+}
+
+/**
+ * `pg` silently ignores an explicit `ssl` options object when the connection string
+ * carries an `sslmode` parameter — and Supabase's copyable URI often does. Since we are
+ * deciding TLS ourselves below, the parameter is removed so our choice actually applies.
+ */
+function stripSslMode(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.searchParams.has("sslmode")) return url;
+    parsed.searchParams.delete("sslmode");
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * TLS is decided here from the host rather than left to `pg` to infer. A hosted database
+ * (Supabase) requires it; a local Docker container does not offer it.
  *
- * Certificate verification stays ON. `rejectUnauthorized: false` is the usual copy-paste
- * response to a TLS error and it quietly downgrades the connection to encrypted-but-
- * unverified, which anyone on the network path can sit in the middle of. The opt-out
- * exists for a provider using a private CA, and is loud about it.
+ * Supabase presents a certificate chained to its OWN CA, not a publicly trusted one, so
+ * Node rejects it as "self-signed certificate in certificate chain" unless that CA is
+ * supplied via DATABASE_SSL_CA (`prod-ca-2021.crt`, from Database Settings → SSL
+ * Configuration). Verification stays ON: `rejectUnauthorized: false` is the usual
+ * copy-paste response to that error and it quietly downgrades the connection to
+ * encrypted-but-unverified, which anyone on the network path can sit in the middle of.
  *
  * Fails closed: a connection string we cannot parse is treated as remote, so the mistake
  * is a TLS handshake error rather than credentials sent in the clear.
@@ -32,15 +60,18 @@ function poolConfig(): pg.PoolConfig {
     return { connectionString: config.databaseUrl };
   }
 
-  const skipVerify = process.env.DATABASE_SSL_NO_VERIFY === "true";
-  if (skipVerify) {
+  const connectionString = stripSslMode(config.databaseUrl);
+
+  if (process.env.DATABASE_SSL_NO_VERIFY === "true") {
     console.warn(
       "[db] DATABASE_SSL_NO_VERIFY=true — connection encrypted but the server certificate " +
-        "is NOT verified. Only acceptable for a provider using a private CA.",
+        "is NOT verified. Prefer DATABASE_SSL_CA with the provider's CA certificate.",
     );
+    return { connectionString, ssl: { rejectUnauthorized: false } };
   }
 
-  return { connectionString: config.databaseUrl, ssl: { rejectUnauthorized: !skipVerify } };
+  const ca = readCa();
+  return { connectionString, ssl: ca ? { ca, rejectUnauthorized: true } : { rejectUnauthorized: true } };
 }
 
 /**
