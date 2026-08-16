@@ -10,7 +10,7 @@
 // `npm run db:reembed -- --stale` upgrades them to real vectors later.
 
 import { pathToFileURL } from "node:url";
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { sampleCannedResponses, sampleCarePatterns } from "../seeds/sample-care-patterns.js";
 import type { SampleCarePattern } from "../seeds/sample-care-patterns.js";
 import { hasFlag } from "./lib/args.js";
@@ -51,7 +51,7 @@ function needsEmbedding(pattern: SampleCarePattern, existing: ExistingRow | unde
 
 export async function seed(): Promise<void> {
   const useFake = hasFlag("fake");
-  const client = new pg.Client({ connectionString: getDatabaseUrl() });
+  const client = createClient(getDatabaseUrl());
   await client.connect();
 
   try {

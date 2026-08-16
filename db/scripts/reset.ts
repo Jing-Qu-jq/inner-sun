@@ -4,7 +4,7 @@
 // The most destructive command in the repo: it discards every row, including the
 // researcher-authored Care Patterns. Guarded to local databases only — see lib/guard.ts.
 
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { fail } from "./lib/cli.js";
 import { getDatabaseUrl } from "./lib/env.js";
 import { assertLocalDatabase } from "./lib/guard.js";
@@ -12,7 +12,7 @@ import { migrate } from "./migrate.js";
 import { seed } from "./seed.js";
 
 async function dropSchema(): Promise<void> {
-  const client = new pg.Client({ connectionString: getDatabaseUrl() });
+  const client = createClient(getDatabaseUrl());
   await client.connect();
   try {
     process.stdout.write("Dropping public schema ... ");

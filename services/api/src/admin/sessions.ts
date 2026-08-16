@@ -50,7 +50,12 @@ export async function createSession(reply: FastifyReply, adminUserId: string): P
 
   reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true, // unreachable from JavaScript, so an XSS bug cannot read it
-    secure: isProduction, // HTTPS-only in production; plain http:// locally would drop it
+    // Secure whenever the request actually arrived over HTTPS, *or* when we believe we are
+    // in production. Deriving it from NODE_ENV alone was a silent downgrade waiting to
+    // happen: a host that does not set that variable would have served the admin session
+    // cookie without the flag over real HTTPS, and nothing would have looked wrong.
+    // `request.protocol` is trustworthy here because trustProxy is enabled when hosted.
+    secure: isProduction || reply.request.protocol === "https",
     sameSite: "lax", // the admin app is same-origin, so nothing needs cross-site sends
     path: "/",
     expires: expiresAt,

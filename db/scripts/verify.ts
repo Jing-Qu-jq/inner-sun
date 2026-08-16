@@ -9,7 +9,7 @@
 // own words, does the right researcher-authored pattern come back first? That is the
 // behavior Feature 7 depends on, and nothing but real embeddings can satisfy it.
 
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { fail } from "./lib/cli.js";
 import { embedText } from "./lib/embedding.js";
 import { getDatabaseUrl, getEmbeddingModel } from "./lib/env.js";
@@ -59,7 +59,7 @@ interface Hit {
 }
 
 async function verify(): Promise<void> {
-  const client = new pg.Client({ connectionString: getDatabaseUrl() });
+  const client = createClient(getDatabaseUrl());
   await client.connect();
 
   try {

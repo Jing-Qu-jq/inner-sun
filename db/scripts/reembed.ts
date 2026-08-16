@@ -10,7 +10,7 @@
 // it only regenerates derived vectors, and re-embedding the hosted database is precisely
 // what AC 4 exists for. The target host is printed so it is never ambiguous which one.
 
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { hasFlag } from "./lib/args.js";
 import { fail } from "./lib/cli.js";
 import { embedTexts } from "./lib/embedding.js";
@@ -33,7 +33,7 @@ async function reembed(): Promise<void> {
   const model = getEmbeddingModel();
   const databaseUrl = getDatabaseUrl();
 
-  const client = new pg.Client({ connectionString: databaseUrl });
+  const client = createClient(databaseUrl);
   await client.connect();
 
   try {

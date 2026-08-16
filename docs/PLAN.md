@@ -304,7 +304,17 @@ Retiring — a Care Pattern or an FAQ answer — now opens a confirmation naming
 
 The change is a three-state `status` column replacing the boolean `is_active`, not merely a flipped default — with a boolean, `false` would have meant two unrelated things ("not written yet" and "withdrawn because it was wrong"), the UI would have had to label a brand-new draft "retired", and nothing could tell them apart when reviewing the library. Two consequences worth carrying: **the seed sets `status` explicitly** rather than relying on the column default, so the starter set is live by deliberate choice and nothing becomes retrievable by omission; and **publishing an unindexed pattern is refused with a 409**, since a `published` row with no usable vector would look live while being unreachable — the same silent failure `needs_embedding` exists to prevent. Verified end to end: a new pattern came back `draft` and left `db:verify` at 12 published, publishing moved it to 13, the audit recorded `create` then `publish`, and a pattern flagged `needs_embedding` was refused publication.
 
-**Still outstanding: the tool is not yet reachable by the researcher.** Everything above is verified on localhost. Standing it up on Supabase + Render is the next PR, and only then is the feature actually delivering its purpose.
+**Hosting: the code and the runbook are ready; the accounts are not.** [`render.yaml`](../render.yaml) and [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) land the deployable half. What remains is irreducibly manual — creating the Supabase and Render accounts and entering the two secrets — so this feature is not done until someone performs those steps and the smoke test in the runbook passes.
+
+**Four things would have broken on a hosted platform, all found by auditing rather than by deploying:**
+- **`PORT` was never read.** Hosting platforms assign a port; the config only knew `API_PORT`, so the service would have bound 3001, answered no health check, and been marked unhealthy with nothing in the application log.
+- **`API_HOST` defaulted to loopback**, which in a container means the platform's proxy cannot reach the process at all. It now binds `0.0.0.0` when `PORT` is present, and warns loudly if it ever finds itself bound to loopback with `PORT` set.
+- **`trustProxy` was off.** Behind a load balancer every request carries the proxy's address, and `@fastify/rate-limit` keys on IP — so the login limiter would have been one global budget shared by everyone, and a few failed attempts by anyone at all would have locked the researcher out of her own tool.
+- **TLS was left to chance.** Supabase requires it; whether `pg` infers that from `sslmode` in a pasted connection string is version-dependent. It is now decided explicitly from the host, with certificate verification on and a loud, documented opt-out for a private CA.
+
+**`.env` is no longer loaded when `PORT` is set.** On a hosting platform, configuration should be whatever the platform injected and nothing else. This was not hypothetical: a `.env` reaching the server carrying the local `API_HOST=127.0.0.1` would silently override the correct default and produce exactly the invisible health-check failure described above. Verified both ways — with only platform-style variables the service binds `*:PORT`; locally it still reads `.env` and binds loopback.
+
+**Also hardened:** the session cookie's `Secure` flag no longer depends on `NODE_ENV` alone. A host that does not set that variable would have served the admin session cookie without the flag over real HTTPS, and nothing would have looked wrong; it now also derives from the request protocol, which `trustProxy` makes trustworthy.
 
 **Two deviations from the approved plan, both to avoid native dependencies on a free-tier host:**
 - **Passwords use scrypt from Node core, not Argon2id.** Argon2id is the stronger default, but every Node binding is a native module, and a missing prebuilt binary on Render is an opaque startup crash for whoever is on call. scrypt is memory-hard, in the standard library, and ample against three accounts behind rate limiting. The stored hash format is self-describing (`scrypt$N$r$p$salt$key`) so raising the parameters — or moving to Argon2id — does not invalidate existing accounts.
@@ -386,7 +396,11 @@ Not urgent while the contract is three fields, and riskier from Feature 13 (ques
 4. A smoke test passes in production: register → chat → match → safety → nudge → (bilingual) all work.
 5. Rollback/redeploy process documented.
 
-**Partly done already.** The Feature 17 slice provisions Supabase, runs the migrations against it, stands the API up on Render with secrets configured, and documents redeploy/rollback in `docs/DEPLOYMENT.md` — so AC 2 and AC 5 arrive early, and AC 1 gets a rehearsal (the admin UI is already served by the API at the same origin). What genuinely remains here: deploying the **student-facing app**, turning `POST /chat` back on in a hosted environment with the rate limiting and abuse protection Feature 20 adds, the custom domain, and the full smoke test. Do not re-provision what already exists — check Supabase and Render first.
+**Substantially pre-built by the Feature 17 hosting slice.** That slice provisions Supabase, runs the migrations against it, stands the API up on Render, and documents redeploy and rollback in [`DEPLOYMENT.md`](DEPLOYMENT.md) — so **AC 2 and AC 5 arrive early**, and AC 1 gets a rehearsal, since the admin UI is already served by the API at the same origin. The platform-readiness work is done too: `PORT`/`0.0.0.0` binding, `trustProxy`, database TLS, and a session cookie whose `Secure` flag does not depend on `NODE_ENV`.
+
+What genuinely remains: deploying the **student-facing app**, turning `POST /chat` back on (`ENABLE_CHAT_ROUTES=true`) behind the rate limiting and abuse protection Feature 20 adds, the custom domain, and the full smoke test. **Do not re-provision what already exists** — check Supabase and Render first, and read `render.yaml` before writing new deployment config.
+
+**One decision to revisit here:** the student app will need `WEB_ORIGIN` set for CORS, or — better, and what Feature 21 AC 1 actually asks for — it should be served from the same origin as the API, exactly as the admin UI already is, at which point CORS stops being a consideration at all.
 
 ---
 
