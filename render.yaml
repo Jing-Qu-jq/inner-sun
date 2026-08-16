@@ -1,0 +1,54 @@
+# Render blueprint for the InnerSun researcher admin tool (Feature 17).
+#
+# This deploys ONE service: the Fastify API, which also serves the built admin UI at
+# /admin from its own origin. The student-facing chat app is NOT deployed here — that is
+# Feature 21 — and `ENABLE_CHAT_ROUTES: false` below is what keeps this instance from
+# exposing an open, unauthenticated, token-spending chat endpoint on the public internet.
+#
+# The database is Supabase, not a Render Postgres: see docs/DEPLOYMENT.md for why, and for
+# the steps only a human can do (creating the accounts, pasting the secrets).
+
+services:
+  - type: web
+    name: innersun-admin
+    runtime: node
+    plan: free
+    # Free instances spin down when idle, so the first request after a quiet period takes
+    # roughly 50 seconds. Acceptable for a tool two or three people open a few times a day.
+    region: oregon
+
+    # The whole monorepo is built: shared types, then the admin bundle, then the API —
+    # whose build step copies that bundle into dist/public to be served.
+    buildCommand: npm ci && npm run build:shared && npm run build:admin && npm run build:api
+    startCommand: node services/api/dist/index.js
+
+    # Render polls this to decide whether a deploy is healthy. It reports database
+    # connectivity too, so a bad DATABASE_URL shows up here rather than at first login.
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Admin-only instance. Turning this on would publish a chat endpoint that anyone
+      # could call and that spends OpenAI credit on every request.
+      - key: ENABLE_CHAT_ROUTES
+        value: "false"
+
+      # Supabase connection string, and the OpenAI key used to embed a pattern on save.
+      # sync:false means Render prompts for them in the dashboard and they are never
+      # committed to this file. Use the Supabase *session pooler* URI — see DEPLOYMENT.md.
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # Pinned so the vectors this service writes stay comparable with the ones the seed
+      # and db:reembed produce. A mismatch here yields meaningless similarity scores
+      # rather than an error.
+      - key: OPENAI_MODEL_EMBEDDING
+        value: text-embedding-3-small
+
+    # PORT is injected by Render; the API reads it and binds 0.0.0.0 on that signal.
+    # No SESSION_SECRET: admin sessions are rows in `admin_sessions` keyed by the SHA-256
+    # of a random cookie token, not a signed stateless cookie, so there is nothing to sign.

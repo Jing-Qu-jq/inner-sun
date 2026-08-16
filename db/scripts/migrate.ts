@@ -5,7 +5,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { fail } from "./lib/cli.js";
 import { getDatabaseUrl } from "./lib/env.js";
 
@@ -13,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, "..", "migrations");
 
 export async function migrate(): Promise<void> {
-  const client = new pg.Client({ connectionString: getDatabaseUrl() });
+  const client = createClient(getDatabaseUrl());
   await client.connect();
   try {
     await client.query(`

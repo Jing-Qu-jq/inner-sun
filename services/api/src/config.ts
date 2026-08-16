@@ -14,7 +14,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 // so bare `dotenv/config` would look for services/api/.env, find nothing, and
 // silently leave every variable undefined. Same approach as db/scripts/lib/env.ts.
 // The path is ../../.. from either src/ or dist/, which sit at the same depth.
-dotenv.config({ path: join(here, "..", "..", "..", ".env") });
+//
+// Skipped entirely when PORT is set, i.e. on a hosting platform. There, configuration is
+// whatever the platform injected and nothing else — a stray .env reaching the server
+// should not be able to quietly override it. This is not hypothetical: a .env carrying the
+// local `API_HOST=127.0.0.1` would bind the service to loopback, at which point it starts
+// cleanly, logs nothing wrong, and fails its health check with no explanation.
+if (!process.env.PORT) {
+  dotenv.config({ path: join(here, "..", "..", "..", ".env") });
+}
 
 function optional(name: string, fallback: string): string {
   const value = process.env[name];
@@ -39,9 +47,27 @@ function secret(name: string): string | undefined {
 }
 
 export const config = {
-  /** Port the API listens on locally. */
-  port: Number(optional("API_PORT", "3001")),
-  host: optional("API_HOST", "127.0.0.1"),
+  /**
+   * Port to listen on.
+   *
+   * `PORT` comes first because that is what hosting platforms inject — Render, Fly, Heroku
+   * and friends all assign a port and expect the process to use it. Binding anything else
+   * means the platform's health check never gets an answer and the deploy is marked
+   * unhealthy with no error in the application log, which is a miserable thing to debug.
+   * `API_PORT` remains for local use, where it is the more descriptive name.
+   */
+  port: Number(process.env.PORT || optional("API_PORT", "3001")),
+
+  /**
+   * Address to bind.
+   *
+   * Loopback is right locally — it keeps a development server off the office network.
+   * In a container it is wrong: the platform's proxy reaches the process from outside the
+   * loopback interface, so binding 127.0.0.1 makes the service unreachable however healthy
+   * it is. `PORT` being set is the reliable signal that we are on such a platform.
+   */
+  host: optional("API_HOST", process.env.PORT ? "0.0.0.0" : "127.0.0.1"),
+
   nodeEnv: optional("NODE_ENV", "development"),
   /** Allowed origin for the web app during local dev. */
   webOrigin: optional("WEB_ORIGIN", "http://localhost:3000"),
@@ -103,7 +129,9 @@ export function validateConfig(): string[] {
     );
   }
   if (!Number.isFinite(config.port) || config.port <= 0) {
-    problems.push(`API_PORT is not a valid port number: ${process.env.API_PORT}`);
+    problems.push(
+      `Port is not a valid number: PORT=${process.env.PORT ?? "(unset)"}, API_PORT=${process.env.API_PORT ?? "(unset)"}`,
+    );
   }
   if (!Number.isFinite(config.openai.maxReplyTokens) || config.openai.maxReplyTokens <= 0) {
     problems.push(`OPENAI_MAX_REPLY_TOKENS must be a positive number: ${process.env.OPENAI_MAX_REPLY_TOKENS}`);

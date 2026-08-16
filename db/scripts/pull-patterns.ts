@@ -12,7 +12,7 @@
 // follow-up command is printed. That keeps the OpenAI spend explicit rather than hidden
 // inside a command whose name says nothing about embedding.
 
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { fail } from "./lib/cli.js";
 import { CARE_PATTERN_COLUMNS, type CarePatternRow } from "./lib/care-patterns.js";
 import { getDatabaseUrl, getRemoteDatabaseUrl } from "./lib/env.js";
@@ -33,8 +33,8 @@ async function pullPatterns(): Promise<void> {
   // the hosted database would overwrite the researcher's work with local copies.
   assertLocalDatabase(localUrl, "overwrite Care Patterns");
 
-  const remote = new pg.Client({ connectionString: remoteUrl });
-  const local = new pg.Client({ connectionString: localUrl });
+  const remote = createClient(remoteUrl);
+  const local = createClient(localUrl);
   await remote.connect();
   await local.connect();
 

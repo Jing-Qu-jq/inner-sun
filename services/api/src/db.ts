@@ -3,11 +3,51 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { config } from "./config.js";
 import { AppError } from "./errors.js";
 
+/** Hostnames that mean "this machine", and so need no TLS. */
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+
+/**
+ * TLS is decided here from the host rather than left to `pg` to infer from `sslmode` in
+ * the connection string: that parsing has changed across pg versions, and a string pasted
+ * from a provider's dashboard may or may not carry the parameter. A hosted database
+ * (Supabase) requires TLS; a local Docker container does not offer it.
+ *
+ * Certificate verification stays ON. `rejectUnauthorized: false` is the usual copy-paste
+ * response to a TLS error and it quietly downgrades the connection to encrypted-but-
+ * unverified, which anyone on the network path can sit in the middle of. The opt-out
+ * exists for a provider using a private CA, and is loud about it.
+ *
+ * Fails closed: a connection string we cannot parse is treated as remote, so the mistake
+ * is a TLS handshake error rather than credentials sent in the clear.
+ */
+function poolConfig(): pg.PoolConfig {
+  let hostname: string | undefined;
+  try {
+    hostname = new URL(config.databaseUrl).hostname || undefined;
+  } catch {
+    hostname = undefined;
+  }
+
+  if (hostname !== undefined && LOCAL_HOSTNAMES.has(hostname)) {
+    return { connectionString: config.databaseUrl };
+  }
+
+  const skipVerify = process.env.DATABASE_SSL_NO_VERIFY === "true";
+  if (skipVerify) {
+    console.warn(
+      "[db] DATABASE_SSL_NO_VERIFY=true — connection encrypted but the server certificate " +
+        "is NOT verified. Only acceptable for a provider using a private CA.",
+    );
+  }
+
+  return { connectionString: config.databaseUrl, ssl: { rejectUnauthorized: !skipVerify } };
+}
+
 /**
  * Shared PostgreSQL connection pool for the API (Feature 3).
  * The database holds Care Patterns + their embeddings, users, conversations, and more.
  */
-export const pool = new pg.Pool({ connectionString: config.databaseUrl });
+export const pool = new pg.Pool(poolConfig());
 
 // An idle pooled client can fail on its own (the database restarted, the network
 // dropped). pg forwards that as an 'error' event on the pool, and an unhandled

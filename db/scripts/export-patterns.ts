@@ -14,7 +14,7 @@
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import pg from "pg";
+import { createClient } from "./lib/pg.js";
 import { hasFlag } from "./lib/args.js";
 import { fail } from "./lib/cli.js";
 import { CARE_PATTERN_COLUMNS, type CarePatternRow, toExported } from "./lib/care-patterns.js";
@@ -28,7 +28,9 @@ async function exportPatterns(): Promise<void> {
   const useRemote = hasFlag("remote");
   const databaseUrl = useRemote ? getRemoteDatabaseUrl() : getDatabaseUrl();
 
-  if (useRemote && !databaseUrl) {
+  // Only the --remote path can be undefined (getDatabaseUrl always has a default), but
+  // checking the value rather than the flag is what narrows the type for everything below.
+  if (!databaseUrl) {
     throw new Error(
       "--remote needs REMOTE_DATABASE_URL set in the repo-root .env (the hosted database's " +
         "connection string). It is deliberately separate from DATABASE_URL so that reaching " +
@@ -36,11 +38,11 @@ async function exportPatterns(): Promise<void> {
     );
   }
 
-  const client = new pg.Client({ connectionString: databaseUrl });
+  const client = createClient(databaseUrl);
   await client.connect();
 
   try {
-    console.log(`Exporting from ${databaseHost(databaseUrl!) ?? "unknown host"} ...`);
+    console.log(`Exporting from ${databaseHost(databaseUrl) ?? "unknown host"} ...`);
 
     // Retired patterns are included: a backup that silently drops them is not a backup.
     const { rows } = await client.query<CarePatternRow>(

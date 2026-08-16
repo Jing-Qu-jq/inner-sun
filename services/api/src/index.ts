@@ -31,6 +31,21 @@ const pkgVersion = "0.1.0";
 
 export function buildServer() {
   const app = Fastify({
+    /**
+     * Behind a hosting platform's load balancer, every request arrives from the proxy, so
+     * `request.ip` is the proxy's address unless we opt into the X-Forwarded-* headers.
+     * Two things break without this, both quietly:
+     *
+     *   • @fastify/rate-limit keys on IP, so the login limiter would be a single global
+     *     budget shared by everyone — a handful of failed attempts by anyone at all would
+     *     lock the researcher out of her own tool.
+     *   • `request.protocol` would read "http" behind TLS termination, which is what the
+     *     session cookie consults to decide whether to set the Secure flag.
+     *
+     * Enabled only when hosted. Trusting forwarded headers from an arbitrary local client
+     * would let anyone spoof their own IP and sidestep the rate limit entirely.
+     */
+    trustProxy: Boolean(process.env.PORT),
     // Fastify's ajv defaults are lenient in two ways that hide client bugs:
     // coerceTypes turns `{"message": 123}` into the string "123", and
     // removeAdditional silently drops properties the schema does not declare,
@@ -136,7 +151,24 @@ export function buildServer() {
   return app;
 }
 
+/** Hostnames that only accept connections originating on this machine. */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+
 async function start() {
+  // `PORT` means a hosting platform assigned us one, and such a platform reaches the
+  // process from outside the loopback interface. Binding loopback there produces the
+  // worst kind of failure: the service starts, logs nothing wrong, answers nothing, and
+  // the platform reports only that the health check timed out. Usually this means a
+  // stray API_HOST — a committed .env, or one copied from .env.example onto the host.
+  if (process.env.PORT && LOOPBACK.has(config.host)) {
+    console.warn(
+      `\n⚠️  API_HOST is ${config.host} while PORT is set, which is the signature of a\n` +
+        "   hosted environment. Nothing outside this container will be able to reach the\n" +
+        "   service and the platform's health check will time out with no error logged.\n" +
+        "   Unset API_HOST to bind 0.0.0.0, or set it explicitly if this is deliberate.\n",
+    );
+  }
+
   // Check configuration before binding a port: a server that boots and then
   // fails every request is harder to diagnose than one that says why up front.
   const problems = validateConfig();
