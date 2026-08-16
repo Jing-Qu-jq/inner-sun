@@ -27,6 +27,12 @@ services:
     healthCheckPath: /health
 
     envVars:
+      # Pinned rather than left to Render's rolling default, so the runtime the build was
+      # verified against is the one that keeps running. An unannounced default bump is a
+      # build that breaks on a day nobody touched the code.
+      - key: NODE_VERSION
+        value: "24"
+
       - key: NODE_ENV
         value: production
 

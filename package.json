@@ -32,6 +32,7 @@
     "admin:create": "npm run admin:create --workspace @innersun/api --"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "typescript": "^5.5.4"
   }
 }
