@@ -1,8 +1,13 @@
-# Deploying the researcher admin tool
+# Deployment
 
 This stands up **one service** — the Fastify API, which also serves the admin UI at
-`/admin` from its own origin — against a **Supabase** Postgres database. The student chat
-app is not deployed here; that is Feature 21.
+`/admin` from its own origin — against a **Supabase** Postgres database.
+
+> **Scope.** Today this deployment exists for the researcher admin tool, and the
+> student-facing chat app is not part of it. Feature 21 **extends this same deployment**
+> rather than adding a second one: same Render service, same database, with
+> `ENABLE_CHAT_ROUTES` turned back on and the web app served from the same origin the admin
+> UI already uses. That is why this file is `DEPLOYMENT.md` and not something admin-specific.
 
 Everything the researcher needs lives behind a login at `https://<your-service>/admin`.
 
@@ -41,43 +46,71 @@ create extension if not exists vector;
 The migrations create it too, but doing it here first surfaces a permissions problem while
 you are still looking at a SQL console rather than at a failed deploy.
 
-**Take the connection string** from *Project Settings → Database → Connection string →
-URI*. Use the **session pooler** URI (port 5432 style, labelled "Session mode"), not the
-transaction pooler: the API holds a connection pool and uses prepared statements, which the
-transaction pooler does not support.
+**Take the connection string** from the **Connect** button at the top of the project
+dashboard. (It used to live under *Project Settings → Database*; Supabase moved it.)
 
-Keep that string somewhere safe for the next steps. It contains your database password.
+Use the **session pooler** URI — the one on **port 5432**, not 6543. Port 6543 is the
+transaction pooler, which does not support the prepared statements `pg` uses, and it fails
+as assorted query errors rather than anything that mentions pooling.
+
+The dashboard shows the URI with a literal `[YOUR-PASSWORD]` placeholder; substitute the
+password you saved when creating the project. If you did not save it, reset it under
+*Settings → Database* — nothing is connected yet, so there is no cost to doing so.
+
+Keep the finished string somewhere safe. It contains your database password.
+
+**Download the CA certificate while you are here.** *Database Settings → SSL Configuration
+→ Download certificate* gives you `prod-ca-2021.crt`. You need it for the next step, and
+for Render — see below.
 
 ---
 
 ## 2. Run the migrations against Supabase
 
-From your machine, with the connection string in hand:
+No commit or build is needed for any of this — the scripts run TypeScript directly from
+your working tree. Git only matters for Render, which clones from GitHub.
+
+TLS is required by Supabase and is enabled automatically for any non-local host. It also
+needs the **CA certificate** you downloaded above, because Supabase's Postgres presents a
+certificate chained to its own CA rather than a publicly trusted one; without it Node
+rejects the connection as *"self-signed certificate in certificate chain"*.
 
 ```bash
-DATABASE_URL="<your-supabase-uri>" npm run db:migrate
+DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
+  DATABASE_URL="<your-supabase-uri>" \
+  npm run db:migrate
 ```
 
 This applies `0001` through `0004` and records them in `schema_migrations`, so re-running
-is a no-op. TLS is required by Supabase and is enabled automatically for any non-local
-host — see `db/scripts/lib/pg.ts`.
+is a no-op.
 
 Then load the twelve starter Care Patterns. This one needs an explicit flag, because
 seeding overwrites the starter patterns by fixed UUID and the scripts refuse to touch a
 non-local database by accident:
 
 ```bash
-DATABASE_URL="<your-supabase-uri>" OPENAI_API_KEY="<your-key>" \
+DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
+  DATABASE_URL="<your-supabase-uri>" OPENAI_API_KEY="<your-key>" \
   npm run db:seed -- --allow-remote
 ```
 
 Confirm it worked:
 
 ```bash
-DATABASE_URL="<your-supabase-uri>" OPENAI_API_KEY="<your-key>" npm run db:verify
+DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
+  DATABASE_URL="<your-supabase-uri>" OPENAI_API_KEY="<your-key>" \
+  npm run db:verify
 ```
 
 Four student-style queries should each retrieve the right pattern first.
+
+> **If you see a certificate error anyway,** `DATABASE_SSL_NO_VERIFY=true` will connect —
+> but it leaves the connection encrypted-but-unverified, which anyone on the network path
+> can sit in the middle of. Acceptable to unblock a migration you are watching; not
+> something to carry into Render, where it would apply to every request your researcher
+> makes. Two things silently defeat a correct CA: pointing `DATABASE_SSL_CA` at a path that
+> does not exist, and — historically — an `sslmode` parameter in the connection string,
+> which makes `pg` ignore SSL options entirely. The code strips `sslmode` for that reason.
 
 ---
 
@@ -87,12 +120,16 @@ Create a Render account and a **Blueprint** pointing at this repository. Render 
 [`render.yaml`](../render.yaml), which declares the build and start commands, the health
 check path, and the environment.
 
-Render will prompt for the two secrets marked `sync: false`:
+Render will prompt for the values marked `sync: false`:
 
 | Variable | Value |
 | --- | --- |
 | `DATABASE_URL` | The Supabase session-pooler URI from step 1 |
 | `OPENAI_API_KEY` | Your OpenAI key |
+| `DATABASE_SSL_CA` | The **contents** of `prod-ca-2021.crt` — open it in a text editor and paste the whole `-----BEGIN CERTIFICATE-----` block |
+
+`DATABASE_SSL_CA` accepts either a file path or the certificate text itself. On Render,
+paste the text: a hosting platform takes environment variables easily and files awkwardly.
 
 **Do not set `API_HOST`.** The service binds `0.0.0.0` automatically when the platform
 provides `PORT`; a stray `API_HOST` would bind loopback, and the failure mode is a service
@@ -107,7 +144,8 @@ The free plan spins down when idle, so the first request after a quiet spell tak
 ## 4. Create her account
 
 ```bash
-DATABASE_URL="<your-supabase-uri>" \
+DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
+  DATABASE_URL="<your-supabase-uri>" \
   npm run admin:create -- --email her@example.com --name "Her Name"
 ```
 
@@ -136,7 +174,9 @@ Supabase's free tier keeps limited backup history, and the Care Patterns are the
 core asset. Export them periodically and commit the result:
 
 ```bash
-REMOTE_DATABASE_URL="<your-supabase-uri>" npm run db:export:patterns -- --remote
+DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
+  REMOTE_DATABASE_URL="<your-supabase-uri>" \
+  npm run db:export:patterns -- --remote
 ```
 
 The diff doubles as a readable changelog of your researcher's work.
@@ -144,7 +184,9 @@ The diff doubles as a readable changelog of your researcher's work.
 To develop retrieval against her real content without touching production:
 
 ```bash
-REMOTE_DATABASE_URL="<your-supabase-uri>" npm run db:pull:patterns
+DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
+  REMOTE_DATABASE_URL="<your-supabase-uri>" \
+  npm run db:pull:patterns
 npm run db:reembed -- --stale
 ```
 

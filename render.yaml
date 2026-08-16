@@ -43,6 +43,17 @@ services:
       - key: OPENAI_API_KEY
         sync: false
 
+      # Supabase's Postgres presents a certificate chained to its OWN CA, not a publicly
+      # trusted one, so Node rejects the connection as "self-signed certificate in
+      # certificate chain" without this. Paste the CONTENTS of prod-ca-2021.crt
+      # (Database Settings -> SSL Configuration -> Download certificate).
+      #
+      # The alternative, DATABASE_SSL_NO_VERIFY=true, leaves the connection encrypted but
+      # unverified — deliberately not set here, because on this service it would apply to
+      # every request the researcher makes.
+      - key: DATABASE_SSL_CA
+        sync: false
+
       # Pinned so the vectors this service writes stay comparable with the ones the seed
       # and db:reembed produce. A mismatch here yields meaningless similarity scores
       # rather than an error.
