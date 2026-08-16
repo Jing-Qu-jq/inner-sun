@@ -1,5 +1,7 @@
 # Deployment
 
+**Live:** <https://innersun-admin.onrender.com/admin> — first deployed 2026-08-16.
+
 This stands up **one service** — the Fastify API, which also serves the admin UI at
 `/admin` from its own origin — against a **Supabase** Postgres database.
 
@@ -159,12 +161,25 @@ Give yourself an account too, with `--role admin`.
 
 ## 5. Smoke test
 
-- `https://<your-service>/health` returns `{"status":"ok", … "db":"up"}`
-- `https://<your-service>/admin` shows the sign-in page
-- `POST https://<your-service>/chat` returns **404** — confirming the chat endpoint is not
-  exposed on this instance
-- Sign in, create a Care Pattern, press Save, then Publish
-- Confirm the browser sent the session cookie with `Secure` and `HttpOnly` set
+```bash
+BASE=https://innersun-admin.onrender.com
+
+curl -s $BASE/health                                   # {"status":"ok", … "db":"up"}
+curl -s -o /dev/null -w "%{http_code}\n" $BASE/admin/   # 200
+curl -s -o /dev/null -w "%{http_code}\n" $BASE/admin/api/care-patterns   # 401
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $BASE/chat \
+  -H 'Content-Type: application/json' -d '{"message":"hi"}'              # 404
+```
+
+**The 404 is the one that matters.** It confirms the chat endpoint is not exposed on this
+instance, which is what stops it being farmed for OpenAI credit.
+
+Then sign in, create a Care Pattern, press Save, then Publish.
+
+Results from the first deploy (2026-08-16): `db: "up"`, `/admin/` 200, `/admin/api/*` 401,
+`POST /chat` 404, `http://` redirects to `https://`, and the login rate limiter reports a
+per-client budget — confirming `trustProxy` is working, without which every visitor would
+share one global allowance.
 
 ---
 
