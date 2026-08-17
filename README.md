@@ -10,7 +10,8 @@ See the build plan in [docs/PLAN.md](docs/PLAN.md) and the system design in
 ## Layout
 
 ```
-apps/web         React SPA (the existing prototype)
+apps/web         React SPA (the existing prototype) — the student-facing chat app
+apps/admin       Researcher admin tool (Vite + React), served by the API at /admin
 services/api     Node + TypeScript backend orchestrator (Fastify) — owns all OpenAI calls
 packages/shared  Shared TypeScript types (CarePattern, ChatMessage, API shapes)
 db/              Database migrations & seeds (PostgreSQL + pgvector) — added in Feature 3
@@ -57,7 +58,38 @@ This builds the shared types, then starts both:
 - **Web** (React) → http://localhost:3000
 - **API** (Fastify) → http://localhost:3001 (health check: http://localhost:3001/health)
 
-The web app proxies to the API in development (see `apps/web` `proxy` setting).
+The web app calls the API at an **absolute URL** (`REACT_APP_API_BASE_URL`, default
+`http://localhost:3001`) rather than through a dev proxy, so local development exercises
+the same cross-origin request a deployed build will — a CORS mistake surfaces now instead
+of at deploy time. Note that Create React App reads `REACT_APP_*` from `apps/web/.env` or
+the shell, **not** from the repo-root `.env`.
+
+## Run the admin tool (localhost)
+
+The researcher admin tool is a separate app served by the API at `/admin`. Two ways to run
+it, good at different things:
+
+```bash
+npm run build:admin && npm run dev:api   # → http://localhost:3001/admin
+```
+
+Closest to production — same origin, same cookie behaviour. Every UI change needs a rebuild.
+
+```bash
+npm run dev:api      # terminal 1
+npm run dev:admin    # terminal 2   → http://localhost:3002/admin/
+```
+
+Hot reload, with Vite proxying `/admin/api/*` to the API.
+
+You will need an account — there is no sign-up:
+
+```bash
+npm run admin:create -- --email you@example.com --name "Your Name" --role admin
+```
+
+See [`apps/admin/README.md`](apps/admin/README.md) for the details, including why to
+confirm session behaviour in the first mode.
 
 ## Database (PostgreSQL + pgvector)
 
@@ -106,15 +138,22 @@ guidance section is still empty.
 | `npm run dev` | Run web + api locally (this is the main dev command) |
 | `npm run dev:web` | Run only the web app |
 | `npm run dev:api` | Run only the API |
+| `npm run dev:admin` | Vite dev server for the admin tool on :3002 (needs `dev:api` too) |
 | `npm run build:shared` | Compile `packages/shared` types |
 | `npm run build:web` | Production build of the web app |
+| `npm run build:admin` | Build the admin tool; `build:api` copies it into the API's `dist/public` |
 | `npm run build:api` | Compile the API to `services/api/dist` |
+| `npm run admin:create` | Create an admin account (`-- --email … --name … [--role admin]`) |
 | `npm run deploy:web` | Publish `apps/web` to GitHub Pages (prototype hosting) |
 | `npm run db:up` / `db:down` | Start / stop the local Postgres + pgvector container |
+| `npm run db:down:clean` | Stop the container **and delete its data volume** |
 | `npm run db:migrate` | Apply database migrations |
-| `npm run db:seed` | Load sample seed data |
-| `npm run db:reset` | Drop + recreate the schema, then migrate + seed |
-| `npm run db:verify` | Assert cosine top-N vector search works on seed rows |
+| `npm run db:seed` | Load the starter Care Patterns (`-- --fake` to skip OpenAI) |
+| `npm run db:reset` | Drop + recreate the schema, then migrate + seed (**local only**) |
+| `npm run db:verify` | Assert student-style queries retrieve the right Care Pattern |
+| `npm run db:reembed` | Re-embed patterns (`-- --stale` for only those that need it) |
+| `npm run db:export:patterns` | Write live patterns to a version-controlled backup file |
+| `npm run db:pull:patterns` | Copy Care Patterns from the hosted database into the local one |
 
 ## GitHub Pages (prototype)
 
