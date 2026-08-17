@@ -26,7 +26,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${BASE}${path}`, {
       ...init,
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      // Only declare a JSON body when there actually is one. Fastify rejects a request
+      // that claims `Content-Type: application/json` and then sends nothing —
+      // "Body cannot be empty when content-type is set to 'application/json'" — which
+      // breaks every action that is a bare POST: publish, retire, and sign-out.
+      headers: {
+        ...(init?.body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError(0, "network_error", "Can't reach the server. Is the API running?");
