@@ -144,6 +144,7 @@ guidance section is still empty.
 | `npm run build:admin` | Build the admin tool; `build:api` copies it into the API's `dist/public` |
 | `npm run build:api` | Compile the API to `services/api/dist` |
 | `npm run admin:create` | Create an admin account (`-- --email … --name … [--role admin]`) |
+| `npm run retrieval:calibrate` | Score labelled cases through the live RAG pipeline and recommend the relevance floor |
 | `npm run deploy:web` | Publish `apps/web` to GitHub Pages (prototype hosting) |
 | `npm run db:up` / `db:down` | Start / stop the local Postgres + pgvector container |
 | `npm run db:down:clean` | Stop the container **and delete its data volume** |

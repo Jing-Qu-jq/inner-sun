@@ -243,7 +243,11 @@ A common misconception: *the chat model reads the history and "picks" a Care Pat
 match is **vector math**, not the LLM reasoning. The process:
 
 1. **Build a compact match query.** Not all raw history (noisy) — a distilled version: the running
-   summary + the last few messages, **normalized to English** (see Language below).
+   summary + the student's last few messages, **normalized to English** (see Language below). Two details
+   matter more than they look. Only the **student's** messages go in: replaying our own replies would feed
+   the guidance we already injected back into the query that selects the guidance, and a pattern would keep
+   re-selecting itself as the conversation moved on. And the newest message is **labelled as the newest**, so
+   a student who changes the subject is followed rather than out-voted by their own earlier turns.
 2. **Embed it.** `text-embedding-3-small` turns that text into a **vector** (~1,536 numbers encoding its
    meaning). Each Care Pattern's `situation` was embedded the same way, once, on save.
 3. **Vector search (the match).** pgvector compares the query vector to every Care Pattern vector by
@@ -252,10 +256,20 @@ match is **vector math**, not the LLM reasoning. The process:
    below → general empathetic mode + flag a Care-Pattern gap.
 5. **Repeat** each turn (or every few) as the conversation grows, so the match sharpens or switches.
 
-**How the floor is decided:** *not* a magic constant. Absolute cosine values are **embedding-model-specific**,
-so calibrate on data — have researchers label the correct pattern on example conversations, then pick the
-threshold that best separates good from bad matches (precision/recall). Start ~0.7–0.8 and tune from
-production logs. The `gpt-4o-mini` "assess" step is complementary (extract signals; in the Future *hybrid*
+**How the floor is decided:** *not* a magic constant, and **not a percentage**. Absolute cosine values depend
+on the embedding model *and* on how the patterns happen to be worded, so the floor is **measured**, not chosen:
+`npm run retrieval:calibrate` runs labelled cases — messages where one pattern is clearly right, and messages
+the library genuinely does not cover — through the real pipeline and prints the band that separates them.
+
+On the Feature 6 starter set with `text-embedding-3-small`, correct matches score **0.61–0.81** and uncovered
+messages **0.46 and below**, so the default floor is the midpoint of that gap: **0.54** (`CARE_PATTERN_RELEVANCE_FLOOR`).
+Earlier revisions of this document advised starting at ~0.7–0.8; measuring showed that would have rejected
+*every* correct match on this library — silently, with every reply still looking perfectly fine. That is the
+failure mode this calibration exists to prevent, and the reason the number does not travel between libraries:
+re-run the script whenever the pattern set changes materially. If the two bands ever overlap, no threshold
+separates them and the fix is the content, not the number.
+
+The `gpt-4o-mini` "assess" step is complementary (extract signals; in the Future *hybrid*
 design it re-ranks the vector top-10 by actually reading them) — but the v1 match is embeddings + cosine.
 
 ### Language: English knowledge base, replies in the user's language
@@ -268,7 +282,11 @@ design it re-ranks the vector top-10 by actually reading them) — but the v1 ma
 - **Cross-lingual matching.** A Chinese conversation must still match an English KB. OpenAI embeddings are
   multilingual, but *cross-lingual* recall is weaker — so we **normalize the match query to English** with a
   cheap `gpt-4o-mini` pass before the vector search (English→English retrieval is more reliable). The *reply*
-  still goes out in the user's language.
+  still goes out in the user's language. **Measured on the starter set:** normalizing raised the top score on
+  all 12 match cases, by a mean of **+0.17** — and it lifts correct matches far more than uncovered messages,
+  which is precisely what pulls the two bands apart and makes a floor possible at all. The same pass also
+  rewrites first-person venting into the third-person situation language the patterns are authored in, so it
+  earns its keep on English conversations too, not only on Chinese ones.
 
 ### Grounding in research papers
 

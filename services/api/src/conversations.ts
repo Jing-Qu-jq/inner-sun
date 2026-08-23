@@ -28,12 +28,18 @@ const HISTORY_WINDOW = 20;
 interface Conversation {
   id: string;
   locale: Locale;
+  /**
+   * Running summary of the earlier turns. Always null for now — Feature 8 writes it — but
+   * read here already because Feature 7's match query is built from "summary + recent
+   * messages", so summarization becomes a change to one module instead of two.
+   */
+  summary: string | null;
 }
 
 /** Start a new anonymous conversation and return it. */
 export async function createConversation(locale: Locale): Promise<Conversation> {
-  const { rows } = await query<{ id: string; locale: Locale }>(
-    `insert into conversations (locale) values ($1) returning id, locale`,
+  const { rows } = await query<Conversation>(
+    `insert into conversations (locale) values ($1) returning id, locale, summary`,
     [locale],
   );
   return rows[0]!;
@@ -49,10 +55,7 @@ export async function createConversation(locale: Locale): Promise<Conversation> 
  * or the database has been reset.
  */
 export async function getConversation(id: string): Promise<Conversation | undefined> {
-  const { rows } = await query<{ id: string; locale: Locale }>(
-    `select id, locale from conversations where id = $1`,
-    [id],
-  );
+  const { rows } = await query<Conversation>(`select id, locale, summary from conversations where id = $1`, [id]);
   return rows[0];
 }
 

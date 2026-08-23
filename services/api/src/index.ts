@@ -13,6 +13,7 @@ import { isAppError } from "./errors.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminFaqRoutes } from "./routes/admin-faq.js";
 import { registerChatRoutes } from "./routes/chat.js";
+import { logRetrievalReadiness } from "./retrieval.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -90,6 +91,13 @@ export function buildServer() {
   // 404 handler exactly as an unknown route would.
   if (config.enableChatRoutes) {
     app.register(registerChatRoutes);
+    // Say at boot how much of the Care Pattern library retrieval can actually see. An
+    // unembedded or unpublished pattern is invisible to the search and reports nothing,
+    // so without this the first sign of trouble is students quietly getting generic
+    // replies. Deliberately not awaited: it is a report, not a precondition for serving.
+    app.ready(() => {
+      void logRetrievalReadiness(app.log);
+    });
   } else {
     app.log.warn("POST /chat is disabled (ENABLE_CHAT_ROUTES=false) — admin-only instance");
   }
