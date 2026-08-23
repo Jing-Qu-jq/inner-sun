@@ -9,7 +9,7 @@
 - **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3; the reason is recorded in its own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, and Feature 22 was added after Feature 7 and is built next; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
 ### The one exception to localhost-only (2026-08-15)
 A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
@@ -225,6 +225,30 @@ The pattern's strategies are *"a fixed weekly call rather than nightly improvisa
 **What it costs.** About **1.15 s** added to each turn (one `gpt-4o-mini` call plus one embedding, both before the reply call, which they gate) and roughly **+140 prompt tokens** when a pattern is injected — 916 vs 778 on the same message. In money that is a fraction of a cent per turn against the reply's ~$0.005. The latency is the real cost, and the knob for it already exists: AC 4 allows re-matching every few turns rather than every turn if it ever needs to be bought back.
 
 **Not done here, on purpose:** gap flags are logged, not yet persisted (Feature 19 owns collecting them); the summary half of the match query stays null until Feature 8 writes summaries; the questionnaire cold start belongs to Feature 13; and re-ranking the vector top-10 with an LLM remains the *Future* hybrid design, not V1.
+
+## Feature 22: Retrieval inspector on the chat page 🟢 (pulled forward — build next)
+See *why the reply is what it is*, from the student's own chat page, without reading server logs.
+**Depends on:** Feature 7.
+
+Feature 7 made the reply Care-Pattern-grounded, but everything that decides it — the match, the score, the floor, the guidance injected — is visible only in the API's log. That is fine for debugging and useless for demonstrating, and demonstrating it is the point: the difference between a grounded reply and a generic one is the product. This feature makes that difference visible **in the real chat UI**, to a privileged viewer only.
+
+**Deliberately NOT the Feature 17 admin tool.** That tool is for researchers authoring patterns, and it is a separate app. This is an inspector on the student-facing chat page: same conversation, same replies a visitor gets, with a panel that opens underneath them.
+
+**AC:**
+1. A privileged viewer can turn the inspector on from the chat page; an ordinary visitor cannot, and sees no trace of it in the UI or in the API response.
+2. With it on, each assistant reply carries the retrieval facts for that turn: `outcome`, `gap`, the relevance floor in force, the **normalized English match query**, and the top-N candidates with **scores** and which of them cleared the floor.
+3. The exact Care-Pattern guidance block that was injected into the system prompt is viewable for that turn.
+4. **Side-by-side comparison:** the same message can be answered twice — once with the matched guidance and once without — and both replies shown together, so the effect of the knowledge base is visible rather than asserted. Off by default, because it doubles the `gpt-4o` cost of that turn.
+5. Retrieval timing and token usage for the turn are shown, so cost and latency are observable while demoing.
+6. The inspector is **off in production unless deliberately switched on**, and the credential that unlocks it grants *visibility only* — it cannot create, edit, publish or retire a Care Pattern.
+
+**Design intent (settled before building):**
+- **A visibility-only credential, not the researcher session.** The Feature 17 admin cookie can publish and retire clinical guidance; parking it in the student site's browser to reveal similarity scores would trade a real capability for a convenience. It also could not travel there as things stand — that cookie is `sameSite: "lax"` on the API origin and CORS runs without credentials, so a `:3000 → :3001` request never carries it. Both facts point the same way: mint something narrower.
+- **`INSPECTOR_TOKEN`, compared in constant time, sent as a header.** Unset means the feature does not exist — the server never builds the debug payload and the response is byte-identical to a visitor's. That is the right default for a hosted instance, and it fails closed rather than open.
+- **The upgrade path is already known.** When Feature 12 brings real accounts, the same payload hangs off a `role` on the user and the token disappears. Nothing built here is thrown away; only the gate changes.
+- **`debug` must be declared on the response schema.** `POST /chat` serializes strictly with `additionalProperties: false`, so an undeclared field cannot be returned — which is exactly the property that keeps it from leaking when absent.
+- **The comparison runs both prompts, rather than moving the floor.** Setting `CARE_PATTERN_RELEVANCE_FLOOR=0.99` does produce an unguided reply, but it needs a restart, applies to everyone, and cannot be shown next to its guided twin. Two prompts in one request can.
+- **Nothing new is computed for ordinary turns.** Every fact the panel shows already exists inside the turn; the inspector only decides whether to send it.
 
 ## Feature 8: Prompt assembly + cost controls 🟢
 Assemble the final prompt and keep per-conversation cost low.
