@@ -9,7 +9,7 @@
 - **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3; the reason is recorded in its own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, and Feature 22 was added after Feature 7 and is built next; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
 ### The one exception to localhost-only (2026-08-15)
 A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
@@ -117,7 +117,7 @@ Live testing also surfaced that OpenAI returns `429` both for a momentary rate l
 **Design decisions worth carrying forward:**
 - **A missing `OPENAI_API_KEY` stops startup** rather than failing on the first request, and the `.env.example` placeholder counts as missing — otherwise a freshly copied `.env` passes a presence check and dies later as an opaque upstream `401`. This is the Feature 3 `.env` lesson applied to a variable with no fallback to hide it.
 - **Conversation history is in memory** (`services/api/src/conversations.ts`), capped at 20 turns with a 2-hour idle eviction. It is lost on restart, and an unknown `conversationId` is a `404` rather than a silently adopted id — so an id always denotes a conversation this server really created. **Feature 5** replaces this module with the `conversations`/`messages` tables from Feature 3.
-- **The prompt's `{{care_pattern_strategies}}` slot renders empty** until Feature 7's retrieval lands; `{{locale}}` is filled here. `src/prompts/*.md` is copied into `dist/` by the build script, since `tsc` does not copy non-TS files.
+- **The prompt's `{{care_pattern_strategies}}` slot renders empty** here; `{{locale}}` is filled. ✅ Feature 7 now fills the slot each turn from the Care Patterns it retrieved, and leaves it empty when nothing clears the relevance floor. `src/prompts/*.md` is copied into `dist/` by the build script, since `tsc` does not copy non-TS files.
 
 **Note on the "exposed API key" in the title:** the browser-side OpenAI call in `apps/web/src/fetchers/ConversationFetcher.js` still exists (its key is the literal placeholder `your-api-key-here`, so nothing real is exposed today). This feature gives the key a safe server-side home; **Feature 5** is what deletes the browser's direct call to `api.openai.com`.
 
@@ -168,7 +168,7 @@ Get real (or realistic) Care Patterns into the DB so matching has something to m
 | "everyone in my cohort seems so much smarter than me, I never say anything in seminars" | Imposter feelings in a competitive program | 0.6079 | 0.2161 |
 | "I stay up until 3am to call my parents and then I can't concentrate in my 9am lecture" | Sleep disruption & living across time zones | 0.6014 | 0.2808 |
 
-Homesickness has the narrowest margin, which is worth watching when Feature 7 calibrates its relevance floor — it is the most diffusely worded pattern in the set.
+Homesickness has the narrowest margin, which is worth watching when Feature 7 calibrates its relevance floor — it is the most diffusely worded pattern in the set. ✅ It held up: through Feature 7's English-normalized query the same paraphrase scores **0.6716**, comfortably clear of the 0.54 floor, and the Chinese homesickness message scores 0.6524. The narrow margin was an artifact of matching raw student text, which is exactly what the normalization step removes.
 
 **Design decisions worth carrying forward:**
 - **A vector that cannot be trusted is flagged, not left looking healthy.** `needs_embedding` covers three cases — never embedded, a `--fake` placeholder, and a save whose OpenAI call failed (Feature 17). An unembedded pattern is invisible to retrieval with no error anywhere, which is precisely the silent failure this feature exists to prevent, so `db:verify` refuses to run while any exist rather than ranking noise.
@@ -180,16 +180,75 @@ Homesickness has the narrowest margin, which is worth watching when Feature 7 ca
 
 **Note on where the data lives from here.** Once Feature 17's admin tool is in use the **database is the source of truth** and `db/seeds/sample-care-patterns.ts` is only for bootstrapping a fresh environment. `db:export:patterns` writes the live set back to the repo as a version-controlled backup (Supabase's free tier keeps limited history), and `db:pull:patterns` copies hosted patterns *down* into local development — deliberately, rather than repointing `DATABASE_URL` upward, so a local dev session's test conversations never land in the researcher's live data.
 
-## Feature 7: Retrieval & matching pipeline (RAG) 🟢
+## Feature 7: Retrieval & matching pipeline (RAG) ✅ (done)
 The core differentiator: match the conversation to Care Patterns and steer the reply.
 **Depends on:** Features 5, 6.
+
+**AC (all met — verified against a live database and live OpenAI, 2026-08-23):**
+1. ✅ The match query is built in `services/api/src/retrieval.ts` from the conversation — the `conversations.summary` column (null until Feature 8 writes it, read already) plus the student's recent messages — and normalized to English by `gpt-4o-mini` using `src/prompts/match-query.md`.
+2. ✅ The query is embedded with the same `text-embedding-3-small` that embedded every pattern's `situation`, then ranked by pgvector cosine similarity. Top-N and their scores are logged on every turn.
+3. ✅ The floor gates in both directions, verified live. *"I stay up until 3am to call my parents back home and then I'm useless in my 9am lecture"* → **Sleep disruption & living across time zones, 0.7352**, strategies injected. *"someone cut the lock and stole my bike outside the library"* → best candidate 0.2764, logged `outcome: "below_floor", gap: true`, no guidance injected, and the student still got a warm reply.
+4. ✅ Matching re-runs every turn, and switching topics switches the match: mid-conversation the student moved from sleep to money and *Financial pressure & the cost of studying abroad* took first place at **0.7276**.
+5. ✅ `CARE_PATTERN_RELEVANCE_FLOOR` (default **0.54**), plus `CARE_PATTERN_TOP_N`, `CARE_PATTERN_MATCH_WINDOW` and `CARE_PATTERN_MIN_SIGNAL_CHARS`. All four are range-checked at startup — a floor above 1 would match nothing, silently, forever.
+6. ✅ Demonstrable — the A/B below.
+
+**How the floor was chosen.** `npm run retrieval:calibrate` (new) runs 18 labelled cases through the real pipeline — the module the chat route imports, not a copy — and prints the band that separates them:
+
+| | score band | cases |
+| --- | --- | --- |
+| Messages where one pattern is clearly right | **0.6128 – 0.8123** | 12 (incl. 2 in Chinese) |
+| Messages this library genuinely does not cover | **0.0000 – 0.4629** | 6 |
+
+The default is the midpoint, **0.54**: all 12 correct matches applied, none of the 6 uncovered ones. Scores move by a few hundredths between runs — OpenAI is not deterministic even at `temperature: 0`, and the normalizer occasionally answers `NONE` to a borderline message it summarized last time — so the bands above are quoted from the widest run observed across three, and 0.54 sits inside every one of them. Every case also retrieved its *expected* pattern first, so the script doubles as a regression check on the knowledge base. It fails loudly if a pattern stops ranking where it should.
+
+**The A/B that proves AC 6.** The same message, sent to two API instances differing only in the floor (0.54 vs 0.99, which nothing can clear):
+
+> **With the pattern applied:** "…find a **sustainable rhythm** that works better for you. Maybe setting up a **fixed time each week** for a longer call rather than nightly calls… consider **protecting one anchor** in your routine, like a **consistent wake time**, even if your bedtime varies."
+>
+> **Without it:** "…set up a regular time to talk **that's a bit earlier**, if possible… discussing with your parents about **adjusting the call schedule**."
+
+The pattern's strategies are *"a fixed weekly call rather than nightly improvisation"* and *"a consistent wake time matters more than a consistent bedtime"*, and its `avoid` list opens with *"telling them to stop calling home"*. The guided reply follows all three. The unguided one invents plausible advice that drifts toward the very thing the researcher said not to say — which is the argument for the whole feature in two paragraphs.
+
+**Cross-lingual matching works** (also Feature 15 AC 4, early): 我来这边半年了，最近总是很想家…" matched the English *Homesickness & cultural adjustment* at **0.6524** and the Chinese reply carried all three of its strategies.
+
+**Design decisions worth carrying forward:**
+- **The match query is built from the student's messages only.** Replaying our own replies would feed the guidance we already injected back into the query that selects the guidance — a pattern would keep re-selecting itself as the conversation moved on. Their words are evidence; ours are an echo.
+- **The newest message is labelled as newest.** Found by measurement, not by reasoning: with an unlabelled blob, a student who talked about sleep for two turns and then switched to money still got *Sleep disruption* ranked first (0.70) over *Financial pressure* (0.59) — the reply led with the problem they had stopped talking about. Labelling the sections flipped it to 0.73 for the right pattern.
+- **English normalization is not only for Chinese.** It raised the top score on all 12 match cases, mean **+0.17**, because it also rewrites first-person venting into the third-person situation language the patterns are authored in. It lifts correct matches much more than uncovered ones, which is what pulls the two bands apart and makes any floor workable.
+- **The floor was measured, and the number we would have guessed was wrong.** ARCHITECTURE.md advised starting at 0.7–0.8; on this library that would have rejected *every* correct match — silently, with every reply still looking fine. The doc is corrected. Absolute cosine values are specific to the embedding model *and* to how the patterns are worded, so the number does not travel: re-run the calibration when the library changes materially.
+- **Retrieval degrades, it never fails the turn.** A student is waiting for an answer, and the guidance is the optional half of it. All three failure paths were exercised live: a bad embedding model name → `outcome: "failed"`, reply delivered; an embedding model that no pattern was embedded with → `outcome: "no_patterns"`, reply delivered; and a stopped database is still the deliberate 503 from Feature 5, before any tokens are spent.
+- **`gap` means the *library* had no answer, not that we broke.** It is set for `below_floor` only — never for a greeting (`low_signal`), a failed pipeline, or an empty library. Feature 19 collects these to decide which pattern to author next, and a flag that also fires on our own outages would send the researcher chasing content problems that do not exist.
+- **Retrieval only sees patterns it can trust:** `status = 'published'` (migration 0004), not `needs_embedding` (migration 0002), and `embedding_model` equal to the configured one — vectors from two models produce plausible-looking scores rather than an error. Because that filter can silently empty the library, the API now reports at boot how many patterns are retrievable and warns when any published pattern is invisible. Verified by starting an instance with a different embedding model: `retrievable: 0, unretrievable: 12` plus a warning.
+- **Similarity scores are never put in the prompt.** The model does not need the number to use the guidance, and a model given "0.61" is a model that can mention it to a student. Order carries the same information: closest first, labelled as such.
+- **A greeting costs nothing.** Below `CARE_PATTERN_MIN_SIGNAL_CHARS` the pipeline is skipped entirely (`low_signal`, 0 ms, no upstream calls), and the normalizer independently answers `NONE` to small talk that does clear the bar, before any search runs.
+
+**What it costs.** About **1.15 s** added to each turn (one `gpt-4o-mini` call plus one embedding, both before the reply call, which they gate) and roughly **+140 prompt tokens** when a pattern is injected — 916 vs 778 on the same message. In money that is a fraction of a cent per turn against the reply's ~$0.005. The latency is the real cost, and the knob for it already exists: AC 4 allows re-matching every few turns rather than every turn if it ever needs to be bought back.
+
+**Not done here, on purpose:** gap flags are logged, not yet persisted (Feature 19 owns collecting them); the summary half of the match query stays null until Feature 8 writes summaries; the questionnaire cold start belongs to Feature 13; and re-ranking the vector top-10 with an LLM remains the *Future* hybrid design, not V1.
+
+## Feature 22: Retrieval inspector on the chat page 🟢 (pulled forward — build next)
+See *why the reply is what it is*, from the student's own chat page, without reading server logs.
+**Depends on:** Feature 7.
+
+Feature 7 made the reply Care-Pattern-grounded, but everything that decides it — the match, the score, the floor, the guidance injected — is visible only in the API's log. That is fine for debugging and useless for demonstrating, and demonstrating it is the point: the difference between a grounded reply and a generic one is the product. This feature makes that difference visible **in the real chat UI**, to a privileged viewer only.
+
+**Deliberately NOT the Feature 17 admin tool.** That tool is for researchers authoring patterns, and it is a separate app. This is an inspector on the student-facing chat page: same conversation, same replies a visitor gets, with a panel that opens underneath them.
+
 **AC:**
-1. A **match query** is built from the running conversation (summary + recent messages) and **normalized to English** via `gpt-4o-mini`.
-2. The query is embedded and run against `care_patterns` via `pgvector` cosine similarity, returning **top-N with scores**.
-3. A **relevance floor** gates the result: above → the matched patterns' `strategies` are injected into the prompt (blend top-N); below → general empathetic mode, and the turn is flagged as a "Care-Pattern gap."
-4. Matching **re-runs as the conversation grows** (each turn or every few turns), not only once.
-5. The relevance-floor threshold is a config value (so it can be calibrated later), with a sensible default.
-6. Demonstrable: a message about a covered situation visibly pulls the right pattern's guidance into the reply.
+1. A privileged viewer can turn the inspector on from the chat page; an ordinary visitor cannot, and sees no trace of it in the UI or in the API response.
+2. With it on, each assistant reply carries the retrieval facts for that turn: `outcome`, `gap`, the relevance floor in force, the **normalized English match query**, and the top-N candidates with **scores** and which of them cleared the floor.
+3. The exact Care-Pattern guidance block that was injected into the system prompt is viewable for that turn.
+4. **Side-by-side comparison:** the same message can be answered twice — once with the matched guidance and once without — and both replies shown together, so the effect of the knowledge base is visible rather than asserted. Off by default, because it doubles the `gpt-4o` cost of that turn.
+5. Retrieval timing and token usage for the turn are shown, so cost and latency are observable while demoing.
+6. The inspector is **off in production unless deliberately switched on**, and the credential that unlocks it grants *visibility only* — it cannot create, edit, publish or retire a Care Pattern.
+
+**Design intent (settled before building):**
+- **A visibility-only credential, not the researcher session.** The Feature 17 admin cookie can publish and retire clinical guidance; parking it in the student site's browser to reveal similarity scores would trade a real capability for a convenience. It also could not travel there as things stand — that cookie is `sameSite: "lax"` on the API origin and CORS runs without credentials, so a `:3000 → :3001` request never carries it. Both facts point the same way: mint something narrower.
+- **`INSPECTOR_TOKEN`, compared in constant time, sent as a header.** Unset means the feature does not exist — the server never builds the debug payload and the response is byte-identical to a visitor's. That is the right default for a hosted instance, and it fails closed rather than open.
+- **The upgrade path is already known.** When Feature 12 brings real accounts, the same payload hangs off a `role` on the user and the token disappears. Nothing built here is thrown away; only the gate changes.
+- **`debug` must be declared on the response schema.** `POST /chat` serializes strictly with `additionalProperties: false`, so an undeclared field cannot be returned — which is exactly the property that keeps it from leaking when absent.
+- **The comparison runs both prompts, rather than moving the floor.** Setting `CARE_PATTERN_RELEVANCE_FLOOR=0.99` does produce an unguided reply, but it needs a restart, applies to everyone, and cannot be shown next to its guided twin. Two prompts in one request can.
+- **Nothing new is computed for ordinary turns.** Every fact the panel shows already exists inside the turn; the inspector only decides whether to send it.
 
 ## Feature 8: Prompt assembly + cost controls 🟢
 Assemble the final prompt and keep per-conversation cost low.

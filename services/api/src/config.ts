@@ -109,6 +109,47 @@ export const config = {
     /** Give up on a slow upstream rather than holding the request open. */
     timeoutMs: Number(optional("OPENAI_TIMEOUT_MS", "30000")),
   },
+
+  /**
+   * Care Pattern retrieval — the RAG knobs (Feature 7).
+   *
+   * These are configuration rather than constants because the right values depend on the
+   * knowledge base, and the knowledge base is the researcher's, not ours. Every number here
+   * is calibrated against real content by `npm run retrieval:calibrate`, which is the only
+   * honest way to set them — see docs/PLAN.md Feature 7.
+   */
+  retrieval: {
+    /**
+     * Similarity a pattern must reach before its guidance is put in front of a student.
+     *
+     * Measured, not guessed — `npm run retrieval:calibrate` ran 18 labelled cases through
+     * this exact pipeline against the starter library: correct matches scored 0.61-0.81,
+     * messages the library does not cover scored 0.46 and below. 0.54 is the midpoint of
+     * that gap: it applied all 12 correct matches and none of the 6 uncovered ones.
+     *
+     * Absolute cosine values are specific to the embedding model AND to how the patterns
+     * are worded, so this number does not travel. docs/ARCHITECTURE.md's original "start
+     * around 0.7-0.8" would have rejected half the correct matches — silently, with every
+     * reply still looking fine. Re-run the calibration when the library changes materially.
+     */
+    relevanceFloor: Number(optional("CARE_PATTERN_RELEVANCE_FLOOR", "0.54")),
+    /** How many patterns may be blended into one reply, at most. */
+    topN: Number(optional("CARE_PATTERN_TOP_N", "3")),
+    /**
+     * How many of the student's recent messages feed the match query. Only theirs — see
+     * the note on assistant turns in retrieval.ts.
+     */
+    matchWindow: Number(optional("CARE_PATTERN_MATCH_WINDOW", "4")),
+    /**
+     * Below this many characters of student text, skip retrieval entirely.
+     *
+     * A cost guard, not a relevance gate: "hi" cannot match anything, and the floor would
+     * reject it anyway — this just avoids spending two upstream calls to find that out.
+     * Deliberately low, because the floor is the real decision and a false skip is worse
+     * than a wasted fraction of a cent.
+     */
+    minSignalChars: Number(optional("CARE_PATTERN_MIN_SIGNAL_CHARS", "12")),
+  },
 } as const;
 
 export const isProduction = config.nodeEnv === "production";
@@ -138,6 +179,27 @@ export function validateConfig(): string[] {
   }
   if (!Number.isFinite(config.openai.timeoutMs) || config.openai.timeoutMs <= 0) {
     problems.push(`OPENAI_TIMEOUT_MS must be a positive number: ${process.env.OPENAI_TIMEOUT_MS}`);
+  }
+
+  // A floor outside 0-1 is not a stricter setting, it is a broken one: above 1 nothing can
+  // ever match and every student silently gets general replies, below 0 everything matches
+  // and unrelated guidance reaches people. Both fail invisibly, so they fail at startup.
+  const { relevanceFloor, topN, matchWindow, minSignalChars } = config.retrieval;
+  if (!Number.isFinite(relevanceFloor) || relevanceFloor < 0 || relevanceFloor > 1) {
+    problems.push(
+      `CARE_PATTERN_RELEVANCE_FLOOR must be a cosine similarity between 0 and 1: ${process.env.CARE_PATTERN_RELEVANCE_FLOOR}`,
+    );
+  }
+  if (!Number.isInteger(topN) || topN <= 0) {
+    problems.push(`CARE_PATTERN_TOP_N must be a positive whole number: ${process.env.CARE_PATTERN_TOP_N}`);
+  }
+  if (!Number.isInteger(matchWindow) || matchWindow <= 0) {
+    problems.push(`CARE_PATTERN_MATCH_WINDOW must be a positive whole number: ${process.env.CARE_PATTERN_MATCH_WINDOW}`);
+  }
+  if (!Number.isFinite(minSignalChars) || minSignalChars < 0) {
+    problems.push(
+      `CARE_PATTERN_MIN_SIGNAL_CHARS must be zero or a positive number: ${process.env.CARE_PATTERN_MIN_SIGNAL_CHARS}`,
+    );
   }
 
   return problems;

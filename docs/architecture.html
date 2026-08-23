@@ -321,7 +321,10 @@ flowchart LR
     The chat model does <b>not</b> read the history and "pick" a Care Pattern. The match is <b>vector math</b>, not the
     LLM reasoning.</div>
   <ol>
-    <li><b>Build a compact match query</b> — running summary + last few messages, <b>normalized to English</b>.</li>
+    <li><b>Build a compact match query</b> — running summary + the student's last few messages, <b>normalized to
+      English</b>. Only <em>their</em> messages: replaying our own replies would feed injected guidance back into the
+      query that selects the guidance. The newest message is labelled as newest, so a change of subject is followed
+      rather than out-voted by earlier turns.</li>
     <li><b>Embed it</b> — <code>text-embedding-3-small</code> turns it into a ~1,536-number vector. Each Care Pattern's
       <code>situation</code> was embedded the same way, once, on save.</li>
     <li><b>Vector search (the match)</b> — pgvector compares by <b>cosine similarity</b> (0–1) and returns the top-N with
@@ -330,10 +333,18 @@ flowchart LR
       empathetic mode + flag a gap.</li>
     <li><b>Repeat</b> each turn as the conversation grows, so the match sharpens or switches.</li>
   </ol>
-  <p><b>How the floor is decided:</b> not a magic constant — absolute cosine values are embedding-model-specific, so
-    calibrate on data (researchers label the correct pattern on examples → pick the threshold that best separates good
-    from bad matches; start ~0.7–0.8, tune from logs). The <code>gpt-4o-mini</code> "assess" step is complementary
-    (extract signals; a Future <em>hybrid</em> design re-ranks the vector top-10) — but the v1 match is embeddings + cosine.</p>
+  <p><b>How the floor is decided:</b> not a magic constant, and <b>not a percentage</b> — absolute cosine values depend
+    on the embedding model <em>and</em> on how the patterns are worded, so the floor is <b>measured</b>, not chosen.
+    <code>npm run retrieval:calibrate</code> runs labelled cases (messages where one pattern is clearly right, and
+    messages the library genuinely does not cover) through the real pipeline and prints the band that separates them.</p>
+  <p>On the Feature 6 starter set with <code>text-embedding-3-small</code>, correct matches score <b>0.61–0.81</b> and
+    uncovered messages <b>0.46 and below</b>, so the default floor is the midpoint: <b>0.54</b>
+    (<code>CARE_PATTERN_RELEVANCE_FLOOR</code>). Earlier revisions of this document advised starting at ~0.7–0.8;
+    measuring showed that would have rejected <em>every</em> correct match on this library — silently, with every reply
+    still looking perfectly fine. Re-run the script whenever the pattern set changes materially; if the two bands ever
+    overlap, no threshold separates them and the fix is the content, not the number. The <code>gpt-4o-mini</code>
+    "assess" step is complementary (extract signals; a Future <em>hybrid</em> design re-ranks the vector top-10) — but
+    the v1 match is embeddings + cosine.</p>
 
   <h3>Language: English knowledge base, replies in the user's language</h3>
   <ul>
@@ -343,7 +354,11 @@ flowchart LR
       in English or 简体中文 via a "respond in {locale}" instruction.</li>
     <li><b>Cross-lingual matching</b> — a Chinese conversation must match an English KB. Embeddings are multilingual but
       cross-lingual recall is weaker, so we <b>normalize the match query to English</b> (cheap gpt-4o-mini) before the
-      vector search. The reply still goes out in the user's language.</li>
+      vector search. The reply still goes out in the user's language. <b>Measured on the starter set:</b> normalizing
+      raised the top score on all 12 match cases, mean <b>+0.17</b>, and it lifts correct matches far more than
+      uncovered ones — which is what pulls the two bands apart and makes a floor possible at all. It also rewrites
+      first-person venting into the third-person situation language the patterns are authored in, so it earns its keep
+      on English conversations too.</li>
   </ul>
 
   <h3>Grounding in research papers</h3>
