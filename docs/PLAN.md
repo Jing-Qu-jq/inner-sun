@@ -366,7 +366,7 @@ The whole point of the funnel: convert trust into a booking.
 4. No real PHI is ever written to the repo; sensitive stores are access-controlled.
 5. Logs are structured to be **labelable later** (enables the DS evaluation work).
 
-## Feature 17: Researcher admin tool for Care Patterns 🟡 (built & verified locally — hosting outstanding)
+## Feature 17: Researcher admin tool for Care Patterns ✅ (done — built, verified and deployed)
 Let researchers author the knowledge base without engineering.
 **Depends on:** Features 3, 6.
 

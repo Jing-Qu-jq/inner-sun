@@ -153,9 +153,10 @@ researcher cases, apply that guidance, write a caring reply, check it's safe, an
 there — mention that a real counselor is available.
 
 **Engineering detail:** Matching is a *running* assessment. For **anonymous** users we don't match on the
-first "hi"; we wait until there's enough substance (a couple of substantive messages / a small token
-threshold) and let the **relevance floor** decide whether to actually apply a pattern. For **registered**
-users the questionnaire gives a warm start that the conversation then refines. Crisis detection is a
+first "hi"; we wait until a message carries enough substance to be worth embedding (a small character
+threshold on the student's own text, `CARE_PATTERN_MIN_SIGNAL_CHARS`) and let the **relevance floor**
+decide whether to actually apply a pattern. For **registered** users the questionnaire gives a warm start
+that the conversation then refines. Crisis detection is a
 separate, higher-priority path — it never routes to "book next week," it surfaces immediate resources.
 
 ---
@@ -255,6 +256,48 @@ match is **vector math**, not the LLM reasoning. The process:
 4. **Relevance floor (the gate).** If the top score ≥ threshold → inject/blend those patterns' strategies;
    below → general empathetic mode + flag a Care-Pattern gap.
 5. **Repeat** each turn (or every few) as the conversation grows, so the match sharpens or switches.
+
+**When the first attempt happens.** Matching runs on every turn, starting with the student's first
+message — but two cheap gates stand in front of it, so anything that is not a situation costs nothing.
+Below a small amount of the student's *own* text (their last few messages, `CARE_PATTERN_MIN_SIGNAL_CHARS`,
+12 characters by default) the pipeline is skipped entirely, before any upstream call: "hi" cannot match
+anything, and the floor would reject it anyway. Past that gate the normalizer itself can answer `NONE` to
+small talk, which ends the turn after one cheap call and before any embedding or vector search. So the
+first *attempt* is the first message carrying substance, and the first *applied* match is the first turn
+whose top score clears the floor — usually not the same turn. This is the "anonymous → signal-based"
+on-ramp above, and no keyword counting is involved in it.
+
+**What a turn concludes, and where a gap goes.** Every turn records one of five outcomes: `applied`,
+`below_floor`, `no_patterns`, `low_signal`, `failed`. Only `below_floor` raises the **Care-Pattern gap**
+flag — a student described something real and the knowledge base had no answer close enough, which is the
+signal that says which pattern to author next. A greeting is not a gap, and neither is one of our own
+outages: a flag that also fired when the embedding call failed would send the researcher hunting for
+content problems that do not exist. Today each turn writes one structured log line carrying the outcome,
+the flag, the floor, and the candidate titles with their scores — **never the student's words**. Feature 19
+turns that stream into gap analysis; Feature 22's inspector shows the same facts live on the chat page.
+
+**How the floor is decided:** *not* a magic constant, and **not a percentage**. Absolute cosine values depend
+on the embedding model *and* on how the patterns happen to be worded, so the floor is **measured**, not chosen:
+`npm run retrieval:calibrate` runs labelled cases — messages where one pattern is clearly right, and messages
+the library genuinely does not cover — through the real pipeline and prints the band that separates them.
+
+On the Feature 6 starter set with `text-embedding-3-small`, correct matches score **0.61–0.81** and uncovered
+messages **0.46 and below**, so the default floor is the midpoint of that gap: **0.54** (`CARE_PATTERN_RELEVANCE_FLOOR`).
+Earlier revisions of this document advised starting at ~0.7–0.8; measuring showed that would have rejected
+*every* correct match on this library — silently, with every reply still looking perfectly fine. That is the
+failure mode this calibration exists to prevent, and the reason the number does not travel between libraries:
+re-run the script whenever the pattern set changes materially. If the two bands ever overlap, no threshold
+separates them and the fix is the content, not the number.
+
+The `gpt-4o-mini` "assess" step is complementary (extract signals; in the Future *hybrid*
+design it re-ranks the vector top-10 by actually reading them) — but the v1 match is embeddings + cosine.
+
+**Seeing a match.** Every step above is invisible by default — a reply arrives and nothing says
+which pattern shaped it. The chat page can show all of it (matched patterns and scores, the English
+match query, the guidance injected into the prompt, and the same message answered again with that
+guidance withheld) behind a **visibility-only credential** that is off unless deliberately switched
+on. It is deliberately not the researcher tool's admin session, which can publish and retire
+clinical guidance. See PLAN.md Feature 22.
 
 ### Language: English knowledge base, replies in the user's language
 
