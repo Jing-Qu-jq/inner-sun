@@ -256,22 +256,6 @@ match is **vector math**, not the LLM reasoning. The process:
    below → general empathetic mode + flag a Care-Pattern gap.
 5. **Repeat** each turn (or every few) as the conversation grows, so the match sharpens or switches.
 
-**How the floor is decided:** *not* a magic constant, and **not a percentage**. Absolute cosine values depend
-on the embedding model *and* on how the patterns happen to be worded, so the floor is **measured**, not chosen:
-`npm run retrieval:calibrate` runs labelled cases — messages where one pattern is clearly right, and messages
-the library genuinely does not cover — through the real pipeline and prints the band that separates them.
-
-On the Feature 6 starter set with `text-embedding-3-small`, correct matches score **0.61–0.81** and uncovered
-messages **0.46 and below**, so the default floor is the midpoint of that gap: **0.54** (`CARE_PATTERN_RELEVANCE_FLOOR`).
-Earlier revisions of this document advised starting at ~0.7–0.8; measuring showed that would have rejected
-*every* correct match on this library — silently, with every reply still looking perfectly fine. That is the
-failure mode this calibration exists to prevent, and the reason the number does not travel between libraries:
-re-run the script whenever the pattern set changes materially. If the two bands ever overlap, no threshold
-separates them and the fix is the content, not the number.
-
-The `gpt-4o-mini` "assess" step is complementary (extract signals; in the Future *hybrid*
-design it re-ranks the vector top-10 by actually reading them) — but the v1 match is embeddings + cosine.
-
 ### Language: English knowledge base, replies in the user's language
 
 - **Knowledge base = English.** Care Patterns, strategies, and the system prompt are authored in English —

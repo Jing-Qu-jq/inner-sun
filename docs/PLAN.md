@@ -9,7 +9,7 @@
 - **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, and Feature 22 was added after Feature 7 and is built next; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, and Feature 22 was added and built straight after Feature 7; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
 ### The one exception to localhost-only (2026-08-15)
 A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
@@ -226,7 +226,7 @@ The pattern's strategies are *"a fixed weekly call rather than nightly improvisa
 
 **Not done here, on purpose:** gap flags are logged, not yet persisted (Feature 19 owns collecting them); the summary half of the match query stays null until Feature 8 writes summaries; the questionnaire cold start belongs to Feature 13; and re-ranking the vector top-10 with an LLM remains the *Future* hybrid design, not V1.
 
-## Feature 22: Retrieval inspector on the chat page 🟢 (pulled forward — build next)
+## Feature 22: Retrieval inspector on the chat page ✅ (done)
 See *why the reply is what it is*, from the student's own chat page, without reading server logs.
 **Depends on:** Feature 7.
 
@@ -234,13 +234,13 @@ Feature 7 made the reply Care-Pattern-grounded, but everything that decides it �
 
 **Deliberately NOT the Feature 17 admin tool.** That tool is for researchers authoring patterns, and it is a separate app. This is an inspector on the student-facing chat page: same conversation, same replies a visitor gets, with a panel that opens underneath them.
 
-**AC:**
-1. A privileged viewer can turn the inspector on from the chat page; an ordinary visitor cannot, and sees no trace of it in the UI or in the API response.
-2. With it on, each assistant reply carries the retrieval facts for that turn: `outcome`, `gap`, the relevance floor in force, the **normalized English match query**, and the top-N candidates with **scores** and which of them cleared the floor.
-3. The exact Care-Pattern guidance block that was injected into the system prompt is viewable for that turn.
-4. **Side-by-side comparison:** the same message can be answered twice — once with the matched guidance and once without — and both replies shown together, so the effect of the knowledge base is visible rather than asserted. Off by default, because it doubles the `gpt-4o` cost of that turn.
-5. Retrieval timing and token usage for the turn are shown, so cost and latency are observable while demoing.
-6. The inspector is **off in production unless deliberately switched on**, and the credential that unlocks it grants *visibility only* — it cannot create, edit, publish or retire a Care Pattern.
+**AC (all met — verified against a live API, live database and live OpenAI in a real browser, 2026-08-23):**
+1. ✅ `?inspect=1` reveals the unlock bar; the token then rides on the `X-InnerSun-Inspect` header. An ordinary visitor's response carries the same three keys it always did (`conversationId`, `reply`, `locale`) — verified with no header and with a wrong token — and a visitor's page contains no inspector markup at all (checked in the DOM after a real turn: `.inspector-panel` count 0, no matching text anywhere).
+2. ✅ Each inspected reply shows a badge — *"Matched: Sleep disruption & living across time zones · 0.7525"* — over a panel carrying `outcome: applied`, the floor in force (0.54), the English match query, and every candidate with its score and whether it was applied (0.7525 ✓, 0.5010, 0.4875).
+3. ✅ The injected block is shown verbatim, strategies, "do not" items and escalation note included — so what the model was told is inspectable, not inferred.
+4. ✅ A switch adds a second reply with the guidance withheld, rendered beside the real one. Off by default, and **skipped entirely when nothing was applied** — with nothing to withhold, two replies would differ only by sampling noise, so the second `gpt-4o` call is not made.
+5. ✅ Retrieval time (1650 ms) and token usage (894 prompt / 156 completion) are on the panel.
+6. ✅ With `INSPECTOR_TOKEN` unset the feature does not exist: an instance started without it answered a request carrying the *correct* token from another instance with an ordinary three-key response. The credential is minted for this purpose alone and touches no admin route.
 
 **Design intent (settled before building):**
 - **A visibility-only credential, not the researcher session.** The Feature 17 admin cookie can publish and retire clinical guidance; parking it in the student site's browser to reveal similarity scores would trade a real capability for a convenience. It also could not travel there as things stand — that cookie is `sameSite: "lax"` on the API origin and CORS runs without credentials, so a `:3000 → :3001` request never carries it. Both facts point the same way: mint something narrower.
@@ -249,6 +249,27 @@ Feature 7 made the reply Care-Pattern-grounded, but everything that decides it �
 - **`debug` must be declared on the response schema.** `POST /chat` serializes strictly with `additionalProperties: false`, so an undeclared field cannot be returned — which is exactly the property that keeps it from leaking when absent.
 - **The comparison runs both prompts, rather than moving the floor.** Setting `CARE_PATTERN_RELEVANCE_FLOOR=0.99` does produce an unguided reply, but it needs a restart, applies to everyone, and cannot be shown next to its guided twin. Two prompts in one request can.
 - **Nothing new is computed for ordinary turns.** Every fact the panel shows already exists inside the turn; the inspector only decides whether to send it.
+
+**What the demo actually shows.** The same message — *"I stay up until 3am every night to call my parents back home and then I keep falling asleep in my 9am lecture"* — answered twice in one turn:
+
+> **With guidance:** "…those calls can feel like a **lifeline**… finding a more **sustainable rhythm**… a **regular time each week**… **waking up at the same time each day** could help your body find some consistency."
+>
+> **Without it:** "…try calling them on **weekends** or arranging a time that **doesn't interfere with your sleep**… Getting enough rest is crucial."
+
+The pattern's strategies are *"the calls are a lifeline, not a bad habit"*, *"a fixed weekly call rather than nightly improvisation"* and *"a consistent wake time matters more than a consistent bedtime"*; its first `avoid` item is *"telling them to stop calling home"*. The guided reply follows all three. The unguided one is perfectly pleasant and steers toward cutting the calls down — the thing the researcher said not to do. Both are on screen, side by side, with the scores that produced them.
+
+**Design decisions worth carrying forward:**
+- **A separate, narrower credential rather than the researcher's session.** Reusing the Feature 17 admin cookie would have put publish-and-retire authority in the student site's browser to reveal similarity scores. It also could not have travelled there without loosening that cookie's `sameSite` and enabling CORS credentials for every visitor — two changes that weaken the product to serve one person's debugging.
+- **The gate is the schema as much as the check.** `debug` had to be declared on the response schema before it could be returned at all, and Fastify's strict serialization means an absent one is simply not emitted. The failure mode "we forgot to strip the debug field" is therefore not reachable.
+- **The comparison is two prompts, not two floors.** Moving `CARE_PATTERN_RELEVANCE_FLOOR` to 0.99 does produce an unguided reply, but it needs a restart, applies to every visitor, and cannot be shown next to its guided twin.
+- **The comparison reply is never persisted.** Only the reply the student saw is appended to the transcript, so a demo does not put a second assistant turn into the history that Features 8, 14 and 16 summarize, analyze and export.
+- **Panels render from the payload, never from a local recomputation.** A panel that derived its own numbers could disagree with the turn it claims to explain.
+
+**Found only by running it:** an inspected bubble overflowed the message column and clipped the reply, because `react-chat-elements` gives its bubble a 20px left margin that a plain `width: 100%` ignores. Static checks and unit tests were all green while it looked broken on screen.
+
+**The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: Feature 8's running summary and token budget, **Feature 9's crisis detection — how the signal was detected**, and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
+
+**Not done here, on purpose:** the rows those later features will add, since the decisions they show do not exist yet.
 
 ## Feature 8: Prompt assembly + cost controls 🟢
 Assemble the final prompt and keep per-conversation cost low.
@@ -269,6 +290,7 @@ Non-negotiable for a mental-health product.
 3. Crisis handling takes priority over Care-Pattern matching and the booking nudge.
 4. A clear, visible **"not a medical device / not emergency services"** disclaimer is present in the chat UI.
 5. Crisis triggers are logged (de-identified) for later evaluation.
+6. The **Feature 22 inspector shows how the signal was detected** for that turn — what fired, and that it took priority over Care-Pattern matching. Screening runs before retrieval and overrides it, so a turn where crisis handling took over is otherwise indistinguishable from one where nothing matched.
 
 ## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
 Answer common questions with zero LLM cost.
@@ -289,6 +311,7 @@ The whole point of the funnel: convert trust into a booking.
 2. When triggered, the AI gently suggests booking a real counselor.
 3. A working **booking entry point** exists (v1 can be a simple request form or scheduling link — full payments are Future).
 4. The nudge never fires during an active crisis flow (that path takes over).
+5. The **Feature 22 inspector shows why a nudge fired** on the turn it fired — which part of the readiness check was satisfied (turn count, an explicit request, or a matched pattern's `escalation`), and why it stayed silent on the turns it did not. A rule-based decision that can only be inferred from the reply's wording cannot be tuned.
 
 ---
 

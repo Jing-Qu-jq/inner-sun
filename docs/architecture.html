@@ -333,18 +333,11 @@ flowchart LR
       empathetic mode + flag a gap.</li>
     <li><b>Repeat</b> each turn as the conversation grows, so the match sharpens or switches.</li>
   </ol>
-  <p><b>How the floor is decided:</b> not a magic constant, and <b>not a percentage</b> — absolute cosine values depend
-    on the embedding model <em>and</em> on how the patterns are worded, so the floor is <b>measured</b>, not chosen.
-    <code>npm run retrieval:calibrate</code> runs labelled cases (messages where one pattern is clearly right, and
-    messages the library genuinely does not cover) through the real pipeline and prints the band that separates them.</p>
-  <p>On the Feature 6 starter set with <code>text-embedding-3-small</code>, correct matches score <b>0.61–0.81</b> and
-    uncovered messages <b>0.46 and below</b>, so the default floor is the midpoint: <b>0.54</b>
-    (<code>CARE_PATTERN_RELEVANCE_FLOOR</code>). Earlier revisions of this document advised starting at ~0.7–0.8;
-    measuring showed that would have rejected <em>every</em> correct match on this library — silently, with every reply
-    still looking perfectly fine. Re-run the script whenever the pattern set changes materially; if the two bands ever
-    overlap, no threshold separates them and the fix is the content, not the number. The <code>gpt-4o-mini</code>
-    "assess" step is complementary (extract signals; a Future <em>hybrid</em> design re-ranks the vector top-10) — but
-    the v1 match is embeddings + cosine.</p>
+  <p><b>Seeing a match.</b> Every step above is invisible by default — a reply arrives and nothing says which
+    pattern shaped it. The chat page can show all of it (matched patterns and scores, the English match query, the
+    guidance injected into the prompt, and the same message answered again with that guidance withheld) behind a
+    <b>visibility-only credential</b> that is off unless deliberately switched on. It is deliberately not the
+    researcher tool's admin session, which can publish and retire clinical guidance. See PLAN.md Feature 22.</p>
 
   <h3>Language: English knowledge base, replies in the user's language</h3>
   <ul>

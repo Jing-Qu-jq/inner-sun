@@ -4,8 +4,25 @@
     {
       "name": "admin",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start", "--workspace", "@innersun/api"],
+      "runtimeArgs": [
+        "run",
+        "start",
+        "--workspace",
+        "@innersun/api"
+      ],
       "port": 3001,
+      "autoPort": false
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start",
+        "--workspace",
+        "@innersun/web"
+      ],
+      "port": 3000,
       "autoPort": false
     }
   ]

@@ -1,4 +1,8 @@
-import ConversationFetcher, { ChatRequestError } from './ConversationFetcher';
+import ConversationFetcher, {
+    ChatRequestError,
+    clearInspectorToken,
+    setInspectorToken,
+} from './ConversationFetcher';
 
 // Every test drives the real fetcher against a stubbed fetch, so what is being
 // checked is the request we actually put on the wire.
@@ -15,6 +19,7 @@ const lastRequest = () => {
 
 beforeEach(() => {
     global.fetch = jest.fn();
+    clearInspectorToken();
 });
 
 afterEach(() => {
@@ -85,4 +90,51 @@ test('a 200 that is not a usable reply is treated as a failed turn', async () =>
     global.fetch.mockResolvedValue(jsonResponse(200, { conversationId: 'conv-1' }));
 
     await expect(ConversationFetcher({ message: 'hello', locale: 'en' })).rejects.toBeInstanceOf(ChatRequestError);
+});
+
+// --- Retrieval inspector credential (Feature 22) --------------------------------------
+// The rule these protect: an ordinary visitor's request is the same request it was before
+// the inspector existed, and the token travels only when someone deliberately set one.
+
+test('sends no inspector header when no token is set', async () => {
+    global.fetch.mockResolvedValue(jsonResponse(200, { conversationId: 'conv-1', reply: 'hi', locale: 'en' }));
+
+    await ConversationFetcher({ message: 'hello', locale: 'en' });
+
+    const { init } = lastRequest();
+    expect(init.headers['X-InnerSun-Inspect']).toBeUndefined();
+    expect(init.headers['X-InnerSun-Inspect-Compare']).toBeUndefined();
+});
+
+test('sends the inspector token, and the compare header only when asked', async () => {
+    setInspectorToken('secret-token');
+    global.fetch.mockResolvedValue(jsonResponse(200, { conversationId: 'conv-1', reply: 'hi', locale: 'en' }));
+
+    await ConversationFetcher({ message: 'hello', locale: 'en' });
+    expect(lastRequest().init.headers['X-InnerSun-Inspect']).toBe('secret-token');
+    expect(lastRequest().init.headers['X-InnerSun-Inspect-Compare']).toBeUndefined();
+
+    await ConversationFetcher({ message: 'hello again', locale: 'en', compare: true });
+    expect(lastRequest().init.headers['X-InnerSun-Inspect-Compare']).toBe('1');
+
+    clearInspectorToken();
+    await ConversationFetcher({ message: 'and again', locale: 'en', compare: true });
+    expect(lastRequest().init.headers['X-InnerSun-Inspect']).toBeUndefined();
+});
+
+test('passes the debug block through when the API returns one', async () => {
+    const debug = { outcome: 'applied', gap: false, floor: 0.54, candidates: [], guidance: '', retrievalMs: 900 };
+    global.fetch.mockResolvedValue(
+        jsonResponse(200, { conversationId: 'conv-1', reply: 'hi', locale: 'en', debug }),
+    );
+
+    const result = await ConversationFetcher({ message: 'hello', locale: 'en' });
+    expect(result.debug).toEqual(debug);
+});
+
+test('a response with no debug block yields no debug', async () => {
+    global.fetch.mockResolvedValue(jsonResponse(200, { conversationId: 'conv-1', reply: 'hi', locale: 'en' }));
+
+    const result = await ConversationFetcher({ message: 'hello', locale: 'en' });
+    expect(result.debug).toBeUndefined();
 });

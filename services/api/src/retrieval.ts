@@ -83,6 +83,15 @@ export interface RetrievalResult {
    */
   gap: boolean;
   durationMs: number;
+  /**
+   * The English match query the normalizer produced — what was actually embedded.
+   *
+   * Derived from the student's words, so it is deliberately NOT logged: the chat route's
+   * log line picks its fields one by one for exactly this reason. It is returned only to a
+   * privileged viewer through the Feature 22 inspector, where seeing it is the point —
+   * most surprising matches are explained by this sentence rather than by the vector search.
+   */
+  query?: string;
 }
 
 export interface MatchSource {
@@ -109,12 +118,14 @@ export interface RetrievalInput {
  */
 export async function retrieveCarePatterns(input: RetrievalInput): Promise<RetrievalResult> {
   const started = Date.now();
+  let matchQuery: string | undefined;
   const done = (outcome: MatchOutcome, applied: CarePatternMatch[], candidates: CarePatternMatch[]): RetrievalResult => ({
     outcome,
     applied,
     candidates,
     gap: outcome === "below_floor",
     durationMs: Date.now() - started,
+    query: matchQuery,
   });
 
   const source = buildMatchSource(input);
@@ -123,10 +134,10 @@ export async function retrieveCarePatterns(input: RetrievalInput): Promise<Retri
   }
 
   try {
-    const query = await normalizeToEnglish(source.text);
-    if (!query) return done("low_signal", [], []);
+    matchQuery = await normalizeToEnglish(source.text);
+    if (!matchQuery) return done("low_signal", [], []);
 
-    const candidates = await rankCarePatterns(query);
+    const candidates = await rankCarePatterns(matchQuery);
     if (candidates.length === 0) return done("no_patterns", [], []);
 
     const applied = candidates.filter((c) => c.similarity >= config.retrieval.relevanceFloor);
