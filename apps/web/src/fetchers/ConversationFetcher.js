@@ -37,7 +37,49 @@ export class ChatRequestError extends Error {
     }
 }
 
-async function postChat({ message, conversationId, locale }) {
+/**
+ * The retrieval inspector's credential (Feature 22).
+ *
+ * Kept in sessionStorage rather than localStorage so it dies with the tab: this unlocks a
+ * view of the Care Pattern library's scores, and a credential for that should not outlive
+ * the demo it was pasted in for. It grants visibility only — it cannot author or publish a
+ * pattern — and an ordinary visitor never has one, which is what makes their responses
+ * byte-identical to what the API returned before this feature existed.
+ */
+const INSPECTOR_TOKEN_KEY = 'innersun.inspector.token';
+
+export function getInspectorToken() {
+    try {
+        return window.sessionStorage.getItem(INSPECTOR_TOKEN_KEY) || '';
+    } catch {
+        // Private-mode browsers can throw on storage access. No token, no inspector.
+        return '';
+    }
+}
+
+export function setInspectorToken(token) {
+    try {
+        window.sessionStorage.setItem(INSPECTOR_TOKEN_KEY, token);
+    } catch {
+        // Nothing to do: the inspector simply stays off for this tab.
+    }
+}
+
+export function clearInspectorToken() {
+    try {
+        window.sessionStorage.removeItem(INSPECTOR_TOKEN_KEY);
+    } catch {
+        // As above.
+    }
+}
+
+async function postChat({ message, conversationId, locale, compare }) {
+    // Sent only when a token exists, so an ordinary turn is the same request it always was.
+    const token = getInspectorToken();
+    const inspectorHeaders = token
+        ? { 'X-InnerSun-Inspect': token, ...(compare ? { 'X-InnerSun-Inspect-Compare': '1' } : {}) }
+        : {};
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -45,7 +87,7 @@ async function postChat({ message, conversationId, locale }) {
     try {
         response = await fetch(`${API_BASE_URL}/chat`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...inspectorHeaders },
             // conversationId is omitted on the first message of a conversation;
             // the API answers with the id to send back on later turns.
             body: JSON.stringify({ message, locale, ...(conversationId ? { conversationId } : {}) }),
@@ -76,11 +118,12 @@ async function postChat({ message, conversationId, locale }) {
         throw new ChatRequestError('bad_response', { status: response.status });
     }
 
-    return { reply: body.reply, conversationId: body.conversationId, locale: body.locale };
+    // `debug` is present only for a valid inspector token; undefined for everyone else.
+    return { reply: body.reply, conversationId: body.conversationId, locale: body.locale, debug: body.debug };
 }
 
 /**
- * Send one message and return `{ reply, conversationId, locale }`.
+ * Send one message and return `{ reply, conversationId, locale, debug }`.
  *
  * Pass the `conversationId` from the previous reply to continue a conversation;
  * omit it to start one. History itself is the server's business — it lives in
@@ -88,16 +131,16 @@ async function postChat({ message, conversationId, locale }) {
  *
  * Throws {@link ChatRequestError} when the turn fails.
  */
-export default async function ConversationFetcher({ message, conversationId, locale }) {
+export default async function ConversationFetcher({ message, conversationId, locale, compare }) {
     try {
-        return await postChat({ message, conversationId, locale });
+        return await postChat({ message, conversationId, locale, compare });
     } catch (error) {
         // A conversation the API has never heard of — the database was reset, or
         // this tab has been open since an older one. Retrying once without the
         // stale id silently starts a fresh conversation, which is a far better
         // outcome for the student than an error they can do nothing about.
         if (conversationId && error instanceof ChatRequestError && error.code === 'conversation_not_found') {
-            return postChat({ message, locale });
+            return postChat({ message, locale, compare });
         }
         throw error;
     }

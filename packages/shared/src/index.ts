@@ -63,12 +63,62 @@ export interface ChatRequest {
   locale?: Locale;
 }
 
+/**
+ * One Care Pattern the retrieval step considered for a turn (Feature 22).
+ * Scores are cosine similarity, 0-1. Only ever sent to a privileged viewer.
+ */
+export interface ChatDebugCandidate {
+  id: string;
+  title: string;
+  score: number;
+  /** True when it cleared the relevance floor and its strategies were injected. */
+  applied: boolean;
+}
+
+/**
+ * Why the reply is what it is (Feature 22).
+ *
+ * Present only when the request carried a valid inspector credential; an ordinary
+ * visitor's response never contains this field. Everything here already exists inside
+ * the turn — the inspector decides whether to send it, not whether to compute it.
+ */
+export interface ChatDebug {
+  /** What retrieval concluded: applied, below_floor, no_patterns, low_signal, failed. */
+  outcome: string;
+  /** True when a real situation found no pattern close enough — a Care-Pattern gap. */
+  gap: boolean;
+  /** The relevance floor in force for this turn. */
+  floor: number;
+  /** The English match query the normalizer produced, which is what was embedded. */
+  matchQuery?: string;
+  /** Top-N candidates, closest first. */
+  candidates: ChatDebugCandidate[];
+  /** The exact guidance block injected into the system prompt; empty when none was. */
+  guidance: string;
+  /** How long retrieval took, in milliseconds. */
+  retrievalMs: number;
+  /** Token usage of the reply call. */
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  /** Which model answered. */
+  model?: string;
+  /**
+   * The same message answered with the Care-Pattern guidance withheld, for
+   * side-by-side comparison. Present only when comparison was requested AND
+   * guidance was actually applied — with nothing to withhold the two replies
+   * would differ only by sampling noise, which demonstrates nothing.
+   */
+  replyWithoutGuidance?: string;
+  usageWithoutGuidance?: { promptTokens: number; completionTokens: number; totalTokens: number };
+}
+
 /** Response body for POST /chat. */
 export interface ChatResponse {
   conversationId: string;
   reply: string;
   /** The language the reply was requested in — echoed so the client can confirm. */
   locale: Locale;
+  /** Retrieval internals — privileged viewers only (Feature 22). */
+  debug?: ChatDebug;
 }
 
 /** Standard error envelope returned by the API. */

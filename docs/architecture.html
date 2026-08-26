@@ -234,7 +234,8 @@ flowchart TD
 
   <div class="note eng"><span class="label">Engineering detail</span><br/>
     Matching is a <em>running</em> assessment. For <b>anonymous</b> users we don't match on the first "hi"; we wait
-    until there's enough substance (a couple of substantive messages / a small token threshold) and let the
+    until the message carries enough substance to be worth embedding (a small character threshold on the
+    student's own text, <code>CARE_PATTERN_MIN_SIGNAL_CHARS</code>) and let the
     <b>relevance floor</b> decide whether to actually apply a pattern. For <b>registered</b> users the questionnaire
     gives a warm start that the conversation then refines. Crisis detection is a separate, higher-priority path —
     it never routes to "book next week," it surfaces immediate resources.</div>
@@ -333,6 +334,24 @@ flowchart LR
       empathetic mode + flag a gap.</li>
     <li><b>Repeat</b> each turn as the conversation grows, so the match sharpens or switches.</li>
   </ol>
+  <p><b>When the first attempt happens.</b> Matching runs on every turn, starting with the student's first message —
+    but two cheap gates stand in front of it, so anything that is not a situation costs nothing. Below a small amount
+    of the student's <em>own</em> text (their last few messages, <code>CARE_PATTERN_MIN_SIGNAL_CHARS</code>, 12
+    characters by default) the pipeline is skipped entirely, before any upstream call: "hi" cannot match anything and
+    the floor would reject it anyway. Past that gate the normalizer itself can answer <code>NONE</code> to small talk,
+    ending the turn after one cheap call and before any embedding or vector search. So the first <em>attempt</em> is
+    the first message carrying substance, and the first <em>applied</em> match is the first turn whose top score clears
+    the floor — usually not the same turn. This is the "anonymous → signal-based" on-ramp, with no keyword counting
+    involved.</p>
+  <p><b>What a turn concludes, and where a gap goes.</b> Every turn records one of five outcomes: <code>applied</code>,
+    <code>below_floor</code>, <code>no_patterns</code>, <code>low_signal</code>, <code>failed</code>. Only
+    <code>below_floor</code> raises the <b>Care-Pattern gap</b> flag — a student described something real and the
+    knowledge base had no answer close enough, which is the signal that says which pattern to author next. A greeting
+    is not a gap, and neither is one of our own outages: a flag that also fired when the embedding call failed would
+    send the researcher hunting for content problems that do not exist. Today each turn writes one structured log line
+    with the outcome, the flag, the floor, and the candidate titles and scores — <b>never the student's words</b>.
+    Feature 19 turns that stream into gap analysis; Feature 22's inspector shows the same facts live on the chat
+    page.</p>
   <p><b>How the floor is decided:</b> not a magic constant, and <b>not a percentage</b> — absolute cosine values depend
     on the embedding model <em>and</em> on how the patterns are worded, so the floor is <b>measured</b>, not chosen.
     <code>npm run retrieval:calibrate</code> runs labelled cases (messages where one pattern is clearly right, and
@@ -345,6 +364,12 @@ flowchart LR
     overlap, no threshold separates them and the fix is the content, not the number. The <code>gpt-4o-mini</code>
     "assess" step is complementary (extract signals; a Future <em>hybrid</em> design re-ranks the vector top-10) — but
     the v1 match is embeddings + cosine.</p>
+
+  <p><b>Seeing a match.</b> Every step above is invisible by default — a reply arrives and nothing says which
+    pattern shaped it. The chat page can show all of it (matched patterns and scores, the English match query, the
+    guidance injected into the prompt, and the same message answered again with that guidance withheld) behind a
+    <b>visibility-only credential</b> that is off unless deliberately switched on. It is deliberately not the
+    researcher tool's admin session, which can publish and retire clinical guidance. See PLAN.md Feature 22.</p>
 
   <h3>Language: English knowledge base, replies in the user's language</h3>
   <ul>

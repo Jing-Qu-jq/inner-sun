@@ -175,3 +175,28 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .map-arc, .map-node-halo, .hover-lift { animation: none; transition: none; }
 }
+
+/* Retrieval inspector (Feature 22). Only ever rendered for a privileged viewer, so these
+   rules affect nothing a student sees. An inspected bubble carries a table and a prompt
+   excerpt, which need the full column rather than a chat bubble's natural width. */
+.message-inspected .rce-mbox {
+    /* The library's bubble carries a 20px left and 5px right margin, so a plain
+       width: 100% overflows the column by exactly that much and clips the reply. */
+    max-width: 100%;
+    width: calc(100% - 25px);
+}
+
+.inspector-panel .accordion-button {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.inspector-panel .accordion-body {
+    padding: 0.5rem;
+}
+
+.inspector-guidance {
+    white-space: pre-wrap;
+    max-height: 18rem;
+    overflow: auto;
+}
