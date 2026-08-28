@@ -156,6 +156,28 @@ guidance section is still empty.
 | `npm run db:export:patterns` | Write live patterns to a version-controlled backup file |
 | `npm run db:pull:patterns` | Copy Care Patterns from the hosted database into the local one |
 
+## Retrieval inspector (Feature 22)
+
+Shows *why* a reply is what it is, on the chat page itself: the Care Patterns the message
+matched, their similarity scores, which cleared the relevance floor, the English match query
+that was embedded, and the exact guidance injected into the prompt. It can also answer the
+same message a second time with that guidance withheld, so the two replies sit side by side.
+
+It is off unless you switch it on. Set a token on the API and reload the chat page with
+`?inspect=1`:
+
+```bash
+INSPECTOR_TOKEN=$(openssl rand -base64 24) npm run dev:api
+```
+
+Then open `http://localhost:3000/#/chatPage?inspect=1`, paste the token into the bar above the
+composer, and send a message. The token lives in `sessionStorage`, so it disappears with the
+tab. It grants visibility only — it cannot author, publish or retire a Care Pattern, and it is
+deliberately not the admin session from the researcher tool, which can. With `INSPECTOR_TOKEN`
+unset the API builds no debug payload at all and every response is a visitor's response.
+
+The comparison switch costs a second `gpt-4o` call on the turns you use it for.
+
 ## GitHub Pages (prototype)
 
 The existing prototype stays publishable from `apps/web` via `npm run deploy:web`

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 
 import { MessageList } from 'react-chat-elements';
 import 'react-chat-elements/dist/main.css';
@@ -8,7 +8,8 @@ import Form from 'react-bootstrap/Form';
 import { ChatHeart } from 'react-bootstrap-icons';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
-import ConversationFetcher, { MAX_MESSAGE_LENGTH } from '../../fetchers/ConversationFetcher';
+import ConversationFetcher, { MAX_MESSAGE_LENGTH, getInspectorToken } from '../../fetchers/ConversationFetcher';
+import { InspectorBar, InspectorPanel, inspectorRequested } from './Inspector';
 import { useI18n } from '../../i18n';
 
 // Monotonic counter for stable, unique message ids so the pending
@@ -37,6 +38,29 @@ function Chat() {
     const [chatMode, setChatMode] = useState(false);
     const [question, setQuestion] = useState('');
     const [messageList, setMessageList] = useState([]);
+
+    // The retrieval inspector (Feature 22). Asked for with ?inspect=1, unlocked with a
+    // token the API checks. A student who never adds the parameter sees none of this, and
+    // without a valid token the API returns no `debug` object for the panel to render —
+    // the UI switch alone reveals nothing.
+    const [inspectorToken, setInspectorTokenState] = useState(() => getInspectorToken());
+    const [compareReplies, setCompareReplies] = useState(false);
+
+    // Recomputed on every hash change rather than captured at mount. Reaching for the
+    // inspector mid-conversation means typing ?inspect=1 onto the page already open, which
+    // under HashRouter changes only the hash: the route re-renders but this component is
+    // never remounted, so a flag read once at mount would stay false until a hard reload.
+    const [hashChanges, setHashChanges] = useState(0);
+    useEffect(() => {
+        const bump = () => setHashChanges((n) => n + 1);
+        window.addEventListener('hashchange', bump);
+        return () => window.removeEventListener('hashchange', bump);
+    }, []);
+    const inspectorVisible = useMemo(
+        () => inspectorRequested() || Boolean(inspectorToken),
+        // hashChanges is the dependency that matters; reading it keeps the memo honest.
+        [inspectorToken, hashChanges],
+    );
 
     // The server owns the transcript (Feature 5): all this component keeps is
     // the id identifying it, held for the life of the page rather than in
@@ -107,15 +131,18 @@ function Chat() {
 
         sendQueueRef.current = sendQueueRef.current.then(async () => {
             try {
-                const { reply, conversationId } = await ConversationFetcher({
+                const { reply, conversationId, debug } = await ConversationFetcher({
                     message: text,
                     conversationId: conversationIdRef.current,
                     locale,
+                    compare: compareReplies,
                 });
                 // Every later turn carries this, which is how the API knows
                 // which stored conversation to append to.
                 conversationIdRef.current = conversationId;
-                resolvePlaceholder(placeholderId, { text: reply, className: undefined });
+                // `debug` is undefined for everyone but an inspector, so it is stored
+                // unconditionally and simply has nothing to show in the ordinary case.
+                resolvePlaceholder(placeholderId, { text: reply, className: undefined, debug });
             } catch (error) {
                 // The key rather than the text: the message is translated at
                 // render time, so it follows the language toggle like the rest
@@ -129,10 +156,23 @@ function Chat() {
         });
     };
 
-    // Error bubbles resolve their wording here rather than at send time.
-    const dataSource = messageList.map((item) =>
-        item.errorKey ? { ...item, text: t(item.errorKey) } : item,
-    );
+    // Error bubbles resolve their wording here rather than at send time, and an inspected
+    // reply grows a panel underneath its text. Both are composed at render time so the
+    // stored message keeps carrying the plain reply.
+    const dataSource = messageList.map((item) => {
+        if (item.errorKey) return { ...item, text: t(item.errorKey) };
+        if (!item.debug) return item;
+        return {
+            ...item,
+            className: 'message-inspected',
+            text: (
+                <>
+                    <span>{item.text}</span>
+                    <InspectorPanel debug={item.debug} reply={item.text} />
+                </>
+            ),
+        };
+    });
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -153,6 +193,15 @@ function Chat() {
                     <h1 className="fw-bold mb-2">{t('chat.heading')}</h1>
                     <p className="text-secondary mb-0">{t('chat.subheading')}</p>
                 </div>
+            )}
+
+            {inspectorVisible && (
+                <InspectorBar
+                    token={inspectorToken}
+                    onTokenChange={setInspectorTokenState}
+                    compare={compareReplies}
+                    onCompareChange={setCompareReplies}
+                />
             )}
 
             <div className="position-relative">
