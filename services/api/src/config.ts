@@ -104,10 +104,50 @@ export const config = {
     utilityModel: optional("OPENAI_MODEL_UTILITY", "gpt-4o-mini"),
     /** Care Pattern embeddings (Feature 6). */
     embeddingModel: optional("OPENAI_MODEL_EMBEDDING", "text-embedding-3-small"),
-    /** Cap on reply length. Cost control; tuned properly in Feature 8. */
+    /**
+     * Cap on reply length (Feature 8 AC 4).
+     *
+     * 600 tokens is roughly 400 words — long enough for a warm reply with two or three
+     * concrete suggestions, and short enough that a model which decides to write an essay
+     * is stopped rather than billed. Output is the expensive half of a `gpt-4o` call at four
+     * times the price of input, so this is the single most direct knob on turn cost.
+     */
     maxReplyTokens: Number(optional("OPENAI_MAX_REPLY_TOKENS", "600")),
+    /**
+     * Cap on the running summary (Feature 8 AC 3). The prompt asks for at most 180 words;
+     * this is the hard stop, sized to leave room for Chinese content, which costs more
+     * tokens per word than English even though the summary itself is written in English.
+     */
+    maxSummaryTokens: Number(optional("OPENAI_MAX_SUMMARY_TOKENS", "400")),
     /** Give up on a slow upstream rather than holding the request open. */
     timeoutMs: Number(optional("OPENAI_TIMEOUT_MS", "30000")),
+  },
+
+  /**
+   * How much conversation goes to the model verbatim, and when the rest gets summarized
+   * (Feature 8 AC 3).
+   *
+   * Before this feature, a long conversation simply lost its opening: only the most recent
+   * messages were replayed and everything older fell off the end of the prompt with nothing
+   * taking its place. Bounded, but lossy — twenty messages in, the model no longer knew what
+   * the student came to talk about. Now the older messages are folded into a running summary
+   * instead, so the prompt stays the same size while the conversation stays whole.
+   */
+  history: {
+    /**
+     * Messages replayed word for word, newest first. Everything older is represented by the
+     * summary. Counts messages, not exchanges — 20 is about ten turns each way.
+     */
+    verbatimMessages: Number(optional("HISTORY_VERBATIM_MESSAGES", "20")),
+    /**
+     * How many messages must spill past that window before a summarization runs.
+     *
+     * A batch rather than one-at-a-time because each summarization is an upstream call: at
+     * batch size 1 every turn past the window would pay for one, which is most of what the
+     * summarization was meant to save. At 10 it runs roughly every fifth exchange, and the
+     * prompt is never more than `verbatimMessages + batch - 1` messages long.
+     */
+    summaryBatch: Number(optional("HISTORY_SUMMARY_BATCH", "10")),
   },
 
   /**
@@ -186,6 +226,33 @@ export function validateConfig(): string[] {
   }
   if (!Number.isFinite(config.openai.maxReplyTokens) || config.openai.maxReplyTokens <= 0) {
     problems.push(`OPENAI_MAX_REPLY_TOKENS must be a positive number: ${process.env.OPENAI_MAX_REPLY_TOKENS}`);
+  }
+  if (!Number.isFinite(config.openai.maxSummaryTokens) || config.openai.maxSummaryTokens <= 0) {
+    problems.push(`OPENAI_MAX_SUMMARY_TOKENS must be a positive number: ${process.env.OPENAI_MAX_SUMMARY_TOKENS}`);
+  }
+
+  // Both are message counts, so both must be whole and positive. A zero or negative window
+  // would send the model no conversation at all while every reply still looked coherent on
+  // its own; a zero batch would summarize on every single turn, which costs more than it
+  // saves. Neither reports itself, so both are refused at startup.
+  const { verbatimMessages, summaryBatch } = config.history;
+  if (!Number.isInteger(verbatimMessages) || verbatimMessages <= 0) {
+    problems.push(`HISTORY_VERBATIM_MESSAGES must be a positive whole number: ${process.env.HISTORY_VERBATIM_MESSAGES}`);
+  }
+  if (!Number.isInteger(summaryBatch) || summaryBatch <= 0) {
+    problems.push(`HISTORY_SUMMARY_BATCH must be a positive whole number: ${process.env.HISTORY_SUMMARY_BATCH}`);
+  }
+
+  // Model tiering (Feature 8 AC 2) is a cost decision, and the way it goes wrong is by
+  // configuration rather than by code: point OPENAI_MODEL_UTILITY at the reply model and
+  // every match query and summary silently costs seventeen times what it should, with
+  // nothing anywhere looking different.
+  if (config.openai.utilityModel === config.openai.replyModel) {
+    problems.push(
+      `OPENAI_MODEL_UTILITY and OPENAI_MODEL_REPLY are both "${config.openai.replyModel}". ` +
+        "The utility model runs the match query and the summarizer on every conversation and " +
+        "is meant to be the cheap one (gpt-4o-mini); the reply model is the expensive one.",
+    );
   }
   if (!Number.isFinite(config.openai.timeoutMs) || config.openai.timeoutMs <= 0) {
     problems.push(`OPENAI_TIMEOUT_MS must be a positive number: ${process.env.OPENAI_TIMEOUT_MS}`);

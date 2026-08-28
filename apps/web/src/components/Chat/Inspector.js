@@ -15,7 +15,10 @@ import { clearInspectorToken, setInspectorToken } from '../../fetchers/Conversat
  *
  * Shows why a reply is what it is: which Care Patterns the conversation matched, how
  * closely, which of them cleared the relevance floor, and the guidance that was injected
- * into the prompt as a result. Rendered only for a viewer holding the inspector token —
+ * into the prompt as a result. Feature 8 added the other half of the same question — how
+ * the prompt was assembled, how much of a long conversation was summarized rather than
+ * resent, every upstream call the turn made, and what the turn and the conversation have
+ * cost so far. Rendered only for a viewer holding the inspector token —
  * an ordinary visitor's response carries no `debug` object at all, so there is nothing
  * here to render and no code path that could reveal the knowledge base to them.
  *
@@ -43,7 +46,7 @@ export function inspectorRequested() {
  * Deliberately plain and unbranded — it appears above the composer only when the inspector
  * has been asked for, and a student who never adds ?inspect=1 never sees it.
  */
-export function InspectorBar({ token, onTokenChange, compare, onCompareChange }) {
+export function InspectorBar({ token, onTokenChange, rejected, compare, onCompareChange }) {
     const { t } = useI18n();
     const [draft, setDraft] = useState('');
 
@@ -107,11 +110,22 @@ export function InspectorBar({ token, onTokenChange, compare, onCompareChange })
                     label={t('inspector.compare')}
                 />
             )}
+
+            {/* Unlocking is local; only the API checks the token, and a wrong one is answered
+                with an ordinary response rather than an error. So a rejected token would
+                otherwise look identical to a working inspector with nothing to report. */}
+            {token && rejected && <div className="text-danger mt-1">{t('inspector.rejected')}</div>}
         </div>
     );
 }
 
 const scoreText = (score) => score.toFixed(4);
+
+// Four decimals of a dollar. A turn costs a fraction of a cent and a whole conversation is
+// meant to land near five cents, so cents alone would round almost everything to $0.00.
+const usdText = (usd) => `$${(usd ?? 0).toFixed(4)}`;
+
+const intText = (n) => (n ?? 0).toLocaleString();
 
 /** The per-turn panel, rendered underneath the reply it explains. */
 export function InspectorPanel({ debug, reply }) {
@@ -128,6 +142,18 @@ export function InspectorPanel({ debug, reply }) {
     return (
         <div className="inspector-panel mt-2 pt-2 border-top small">
             <Badge bg={applied.length > 0 ? 'primary' : 'secondary'}>{summary}</Badge>
+            {/* The turn's cost sits beside the match, because the two together are the whole
+                argument: researcher-authored guidance, for a fraction of a cent. */}
+            {debug.turnCostUsd !== undefined && (
+                <Badge bg="light" text="dark" className="ms-1 border">
+                    {usdText(debug.turnCostUsd)}
+                </Badge>
+            )}
+            {debug.prompt?.summarizedThisTurn && (
+                <Badge bg="info" className="ms-1">
+                    {t('inspector.summarizedThisTurn')}
+                </Badge>
+            )}
             {debug.gap && <div className="text-secondary mt-1">{t('inspector.gapNote')}</div>}
 
             <Accordion flush className="inspector-accordion mt-1">
@@ -147,7 +173,18 @@ export function InspectorPanel({ debug, reply }) {
                                 <>
                                     <dt className="col-6">{t('inspector.tokens')}</dt>
                                     <dd className="col-6">
-                                        {debug.usage.promptTokens} / {debug.usage.completionTokens}
+                                        {intText(debug.usage.promptTokens)}
+                                        {debug.usage.cachedPromptTokens > 0 &&
+                                            ` (${intText(debug.usage.cachedPromptTokens)} ${t('inspector.cached')})`}{' '}
+                                        / {intText(debug.usage.completionTokens)}
+                                    </dd>
+                                </>
+                            )}
+                            {debug.turnCostUsd !== undefined && (
+                                <>
+                                    <dt className="col-6">{t('inspector.cost')}</dt>
+                                    <dd className="col-6">
+                                        {usdText(debug.turnCostUsd)} / {usdText(debug.conversationCostUsd)}
                                     </dd>
                                 </>
                             )}
@@ -184,6 +221,63 @@ export function InspectorPanel({ debug, reply }) {
                             <pre className="inspector-guidance small bg-white border rounded p-2">{debug.guidance}</pre>
                         ) : (
                             <p className="text-secondary">{t('inspector.noGuidance')}</p>
+                        )}
+
+                        {/* Prompt assembly and cost (Feature 8). What keeps a long conversation
+                            affordable is invisible in the reply itself: the model sounds exactly
+                            the same whether it was sent forty messages or twenty plus a summary. */}
+                        {debug.prompt && (
+                            <>
+                                <div className="fw-semibold">{t('inspector.prompt')}</div>
+                                <dl className="row mb-2">
+                                    <dt className="col-6">{t('inspector.verbatim')}</dt>
+                                    <dd className="col-6">{intText(debug.prompt.verbatimMessages)}</dd>
+                                    <dt className="col-6">{t('inspector.summarized')}</dt>
+                                    <dd className="col-6">{intText(debug.prompt.summarizedMessages)}</dd>
+                                    <dt className="col-6">{t('inspector.maxReplyTokens')}</dt>
+                                    <dd className="col-6">{intText(debug.prompt.maxReplyTokens)}</dd>
+                                </dl>
+                                {debug.prompt.summary ? (
+                                    <pre className="inspector-guidance small bg-white border rounded p-2">
+                                        {debug.prompt.summary}
+                                    </pre>
+                                ) : (
+                                    <p className="text-secondary">{t('inspector.noSummary')}</p>
+                                )}
+                            </>
+                        )}
+
+                        {debug.calls?.length > 0 && (
+                            <>
+                                <div className="fw-semibold">{t('inspector.calls')}</div>
+                                <Table size="sm" borderless className="mb-3">
+                                    <thead>
+                                        <tr className="text-secondary">
+                                            <th>{t('inspector.callStep')}</th>
+                                            <th>{t('inspector.callModel')}</th>
+                                            <th className="text-end">{t('inspector.callTokens')}</th>
+                                            <th className="text-end">{t('inspector.callCost')}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {debug.calls.map((call, index) => (
+                                            <tr key={`${call.step}-${index}`}>
+                                                <td>
+                                                    <code>{call.step}</code>
+                                                </td>
+                                                <td>{call.model}</td>
+                                                <td className="text-end">
+                                                    {intText(call.promptTokens)}
+                                                    {call.cachedPromptTokens > 0 &&
+                                                        ` (${intText(call.cachedPromptTokens)} ${t('inspector.cached')})`}{' '}
+                                                    / {intText(call.completionTokens)}
+                                                </td>
+                                                <td className="text-end">{usdText(call.costUsd)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </Table>
+                            </>
                         )}
 
                         {/* The comparison: the same turn answered with the guidance withheld.

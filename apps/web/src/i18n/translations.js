@@ -109,6 +109,23 @@ export const translations = {
         'inspector.withoutGuidance': 'Without it',
         'inspector.gapNote': 'A real situation with no pattern close enough — logged as a Care-Pattern gap.',
 
+        // Prompt assembly and cost controls (Feature 8).
+        'inspector.cached': 'cached',
+        'inspector.cost': 'Cost (this turn / conversation)',
+        'inspector.prompt': 'How the prompt was assembled',
+        'inspector.verbatim': 'Messages sent in full',
+        'inspector.summarized': 'Messages replaced by the summary',
+        'inspector.maxReplyTokens': 'Reply cap (tokens)',
+        'inspector.noSummary': 'No summary yet — the whole conversation still fits in the window.',
+        'inspector.summarizedThisTurn': 'Summarized',
+        'inspector.calls': 'Upstream calls on this turn',
+        'inspector.callStep': 'Step',
+        'inspector.callModel': 'Model',
+        'inspector.callTokens': 'Tokens (in / out)',
+        'inspector.callCost': 'Cost',
+        'inspector.rejected':
+            'That reply came back with no inspector data. The token is wrong, or the API is running without INSPECTOR_TOKEN set.',
+
         'login.title': 'Log in',
         'login.email': 'Email',
         'login.password': 'Password',
@@ -212,6 +229,22 @@ export const translations = {
         'inspector.withGuidance': '有关怀模式指导',
         'inspector.withoutGuidance': '没有指导',
         'inspector.gapNote': '这是一个真实处境，但没有足够接近的模式——已记录为关怀模式缺口。',
+
+        // 提示词组装与成本控制（功能 8）。
+        'inspector.cached': '命中缓存',
+        'inspector.cost': '成本（本轮 / 整段对话）',
+        'inspector.prompt': '提示词是怎么拼出来的',
+        'inspector.verbatim': '原文发送的消息数',
+        'inspector.summarized': '被摘要替代的消息数',
+        'inspector.maxReplyTokens': '回复长度上限（token）',
+        'inspector.noSummary': '还没有摘要——整段对话仍然放得进窗口。',
+        'inspector.summarizedThisTurn': '本轮已摘要',
+        'inspector.calls': '本轮向上游发起的调用',
+        'inspector.callStep': '步骤',
+        'inspector.callModel': '模型',
+        'inspector.callTokens': 'Token（输入 / 输出）',
+        'inspector.callCost': '成本',
+        'inspector.rejected': '这条回复没有带回任何检视数据：要么令牌不对，要么 API 启动时没有设置 INSPECTOR_TOKEN。',
 
         'login.title': '登录',
         'login.email': '邮箱',

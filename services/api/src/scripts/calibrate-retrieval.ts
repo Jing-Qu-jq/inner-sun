@@ -148,7 +148,7 @@ interface Measured extends Case {
 async function measure(testCase: Case): Promise<Measured> {
   // Wrapped exactly as a first turn would be, labels and all, so these numbers are the ones
   // production produces rather than a close relative of them.
-  const query = await normalizeToEnglish(buildMatchSource({ history: [], message: testCase.text }).text);
+  const { query } = await normalizeToEnglish(buildMatchSource({ history: [], message: testCase.text }).text);
 
   // "No situation to describe" is the normalizer refusing small talk, which is a correct
   // outcome for a gap case: retrieval stops before it spends anything on the search.
@@ -164,7 +164,7 @@ async function measure(testCase: Case): Promise<Measured> {
   }
 
   const [normalized, raw] = await Promise.all([rankCarePatterns(query), rankCarePatterns(testCase.text)]);
-  const top = normalized[0];
+  const top = normalized.matches[0];
 
   return {
     ...testCase,
@@ -172,7 +172,7 @@ async function measure(testCase: Case): Promise<Measured> {
     topTitle: top?.title ?? "(no patterns)",
     topId: top?.id ?? "",
     score: top?.similarity ?? 0,
-    rawScore: raw[0]?.similarity ?? 0,
+    rawScore: raw.matches[0]?.similarity ?? 0,
     rankedCorrectly: testCase.expectedId === null || top?.id === testCase.expectedId,
   };
 }

@@ -13,6 +13,7 @@
 // so an embedding failure surfaces with the same status codes and the same "never leak the
 // upstream body" discipline as a chat failure.
 
+import type { ChatTokenUsage } from "@innersun/shared";
 import { config } from "./config.js";
 import { AppError } from "./errors.js";
 import { getClient, toAppError } from "./openai.js";
@@ -24,6 +25,15 @@ export interface EmbeddingResult {
   /** Formatted as a pgvector literal, ready for a `$1::vector` parameter. */
   vector: string;
   model: string;
+  /**
+   * What the call cost, in tokens (Feature 8).
+   *
+   * Tiny next to a reply — a forty-word match query is around sixty tokens at $0.02 per
+   * million — and included anyway, because the per-conversation figure this feeds is only
+   * trustworthy if it accounts for every upstream call rather than the memorable ones.
+   * Embeddings have no completion, so only the prompt side is ever non-zero.
+   */
+  usage: ChatTokenUsage;
 }
 
 /** Format a number[] as a pgvector literal, e.g. "[0.1,0.2,...]". */
@@ -82,5 +92,14 @@ export async function embedText(text: string): Promise<EmbeddingResult> {
     );
   }
 
-  return { vector: toVectorLiteral(vector), model };
+  return {
+    vector: toVectorLiteral(vector),
+    model,
+    usage: {
+      promptTokens: response.usage?.prompt_tokens ?? 0,
+      cachedPromptTokens: 0,
+      completionTokens: 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    },
+  };
 }

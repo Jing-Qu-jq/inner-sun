@@ -156,7 +156,23 @@ const DEBUG = {
     ],
     guidance: '### Closest match: Homesickness & cultural adjustment',
     retrievalMs: 910,
-    usage: { promptTokens: 900, completionTokens: 120, totalTokens: 1020 },
+    usage: { promptTokens: 900, cachedPromptTokens: 0, completionTokens: 120, totalTokens: 1020 },
+    // Prompt assembly and cost accounting (Feature 8).
+    prompt: {
+        verbatimMessages: 21,
+        summarizedMessages: 10,
+        summary: 'The student has been abroad six months and misses home.',
+        summarizedThisTurn: true,
+        maxReplyTokens: 600,
+    },
+    calls: [
+        { step: 'summary', model: 'gpt-4o-mini', promptTokens: 700, cachedPromptTokens: 0, completionTokens: 150, costUsd: 0.000195 },
+        { step: 'match-query', model: 'gpt-4o-mini', promptTokens: 420, cachedPromptTokens: 0, completionTokens: 40, costUsd: 0.000087 },
+        { step: 'match-embedding', model: 'text-embedding-3-small', promptTokens: 55, cachedPromptTokens: 0, completionTokens: 0, costUsd: 0.000001 },
+        { step: 'reply', model: 'gpt-4o', promptTokens: 900, cachedPromptTokens: 768, completionTokens: 120, costUsd: 0.002490 },
+    ],
+    turnCostUsd: 0.002773,
+    conversationCostUsd: 0.0311,
 };
 
 test('an ordinary visitor sees no inspector, even if a reply somehow carried debug', async () => {
@@ -183,6 +199,72 @@ test('with a token, a reply shows its matched pattern and score', async () => {
     await waitFor(() => {
         expect(screen.getByText(/Matched: Homesickness & cultural adjustment · 0\.6716/)).toBeInTheDocument();
     });
+    clearInspectorToken();
+});
+
+// --- Prompt assembly and cost (Feature 8) ----------------------------------------------
+// The panel is where the cost controls become demonstrable: a reply reads exactly the same
+// whether the model was sent the whole conversation or twenty messages plus a summary, so
+// the only place the difference is visible at all is here.
+test('an inspected turn shows what it cost and how much history was summarized', async () => {
+    setInspectorToken('secret-token');
+    render(<Chat />);
+
+    send('I feel homesick');
+    await waitFor(() => expect(pending).toHaveLength(1));
+    pending[0].resolve({ reply: 'that sounds hard', conversationId: 'conv-1', debug: DEBUG });
+
+    // The turn's cost and the summarization badge sit next to the match, before anything is
+    // expanded — the point is that they are visible while demonstrating, not buried.
+    await waitFor(() => expect(screen.getByText('$0.0028')).toBeInTheDocument());
+    expect(screen.getByText('Summarized')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Why this reply'));
+
+    // Per-call rows: four calls, and only one of them on the expensive model. That is the
+    // model tiering from AC 2, shown rather than asserted.
+    expect(screen.getByText('reply')).toBeInTheDocument();
+    expect(screen.getByText('match-embedding')).toBeInTheDocument();
+    expect(screen.getAllByText('gpt-4o-mini')).toHaveLength(2);
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+
+    // Cached prompt tokens are what proves prompt caching engaged (AC 4).
+    expect(screen.getAllByText(/768 cached/).length).toBeGreaterThan(0);
+
+    // History composition: twenty-one messages in full, ten replaced by the summary.
+    expect(screen.getByText('Messages replaced by the summary')).toBeInTheDocument();
+    expect(screen.getByText('The student has been abroad six months and misses home.')).toBeInTheDocument();
+    clearInspectorToken();
+});
+
+// A wrong token, or an API running without INSPECTOR_TOKEN, is answered with an ordinary
+// response by design — so the panel must say so rather than looking like a working inspector
+// that happened to have nothing to report.
+test('a token the API rejects is reported instead of failing silently', async () => {
+    setInspectorToken('wrong-token');
+    render(<Chat />);
+
+    send('I feel homesick');
+    await waitFor(() => expect(pending).toHaveLength(1));
+    // No `debug` — exactly what an ordinary visitor gets.
+    pending[0].resolve({ reply: 'that sounds hard', conversationId: 'conv-1' });
+
+    await waitFor(() => {
+        expect(screen.getByText(/no inspector data/i)).toBeInTheDocument();
+    });
+    clearInspectorToken();
+});
+
+test('a token the API accepts shows no rejection notice', async () => {
+    setInspectorToken('secret-token');
+    render(<Chat />);
+
+    send('I feel homesick');
+    await waitFor(() => expect(pending).toHaveLength(1));
+    pending[0].resolve({ reply: 'that sounds hard', conversationId: 'conv-1', debug: DEBUG });
+
+    await waitFor(() => expect(screen.getByText(/Matched:/)).toBeInTheDocument());
+    expect(screen.queryByText(/no inspector data/i)).not.toBeInTheDocument();
     clearInspectorToken();
 });
 

@@ -1,5 +1,5 @@
 import type { QueryResultRow } from "pg";
-import type { ChatMessage, Locale } from "@innersun/shared";
+import type { ChatDebugCall, ChatMessage, ChatTokenUsage, Locale } from "@innersun/shared";
 import { pool } from "./db.js";
 import { AppError } from "./errors.js";
 
@@ -9,37 +9,45 @@ import { AppError } from "./errors.js";
  * This replaces the in-memory Map that Feature 4 used as scaffolding. History
  * now lives in the `conversations` and `messages` tables from Feature 3, so a
  * conversation id keeps working across an API restart and would keep working
- * across more than one instance. It is also what later features read: the
- * running summary in Feature 8, analytics in Feature 14, and the export/delete
- * obligations in Feature 16 all need the transcript to exist somewhere.
+ * across more than one instance. It is also what later features read: analytics
+ * in Feature 14 and the export/delete obligations in Feature 16 both need the
+ * transcript to exist somewhere.
+ *
+ * Feature 8 added the running summary that Feature 5 anticipated. Nothing is deleted
+ * when a conversation is compacted — the oldest messages simply stop being *replayed*,
+ * with `summary` standing in for them and `summarized_message_count` recording how far
+ * it reaches. The full transcript is still on record, which is what makes it possible to
+ * re-summarize differently later, or to hand a student their whole conversation.
  *
  * `user_id` stays null for now — every conversation is anonymous until accounts
  * arrive in Feature 12.
  */
 
-/**
- * How many recent turns are replayed to the model. Older turns stay in the
- * database; they are simply not sent upstream, which caps prompt cost on a long
- * conversation. Feature 8 replaces this hard cut-off with summarization, and
- * the fact that nothing is deleted here is what makes that possible.
- */
-const HISTORY_WINDOW = 20;
-
 interface Conversation {
   id: string;
   locale: Locale;
   /**
-   * Running summary of the earlier turns. Always null for now — Feature 8 writes it — but
-   * read here already because Feature 7's match query is built from "summary + recent
-   * messages", so summarization becomes a change to one module instead of two.
+   * Running summary of the earlier messages, standing in for them in the prompt (Feature 8).
+   * Null until a conversation first grows past the verbatim window. Also read by Feature 7's
+   * match query, which is built from "summary + the student's recent messages".
    */
   summary: string | null;
+  /**
+   * How many of the oldest messages `summary` covers, in the same order they are replayed.
+   * The boundary between "described by the summary" and "sent word for word"; zero means
+   * nothing has been folded in yet.
+   */
+  summarizedMessageCount: number;
 }
+
+/** The columns that make up a Conversation, aliased to their TypeScript names. */
+const CONVERSATION_COLUMNS = `id, locale, summary,
+        summarized_message_count as "summarizedMessageCount"`;
 
 /** Start a new anonymous conversation and return it. */
 export async function createConversation(locale: Locale): Promise<Conversation> {
   const { rows } = await query<Conversation>(
-    `insert into conversations (locale) values ($1) returning id, locale, summary`,
+    `insert into conversations (locale) values ($1) returning ${CONVERSATION_COLUMNS}`,
     [locale],
   );
   return rows[0]!;
@@ -55,7 +63,10 @@ export async function createConversation(locale: Locale): Promise<Conversation> 
  * or the database has been reset.
  */
 export async function getConversation(id: string): Promise<Conversation | undefined> {
-  const { rows } = await query<Conversation>(`select id, locale, summary from conversations where id = $1`, [id]);
+  const { rows } = await query<Conversation>(
+    `select ${CONVERSATION_COLUMNS} from conversations where id = $1`,
+    [id],
+  );
   return rows[0];
 }
 
@@ -67,14 +78,25 @@ export async function updateConversationLocale(id: string, locale: Locale): Prom
   await query(`update conversations set locale = $1 where id = $2 and locale is distinct from $1`, [locale, id]);
 }
 
+/** How many messages a conversation holds — the input to the compaction plan (Feature 8). */
+export async function countMessages(conversationId: string): Promise<number> {
+  const { rows } = await query<{ count: string }>(`select count(*) as count from messages where conversation_id = $1`, [
+    conversationId,
+  ]);
+  return Number(rows[0]?.count ?? 0);
+}
+
 /**
- * The recent turns of a conversation, oldest first — the shape the model wants.
+ * The most recent `limit` messages of a conversation, oldest first — the shape the model
+ * wants. Callers pass a limit computed from the compaction plan, so that the messages the
+ * summary already covers are never also replayed in full.
  *
  * The system prompt is deliberately not stored or replayed: it is rebuilt on
  * every turn from the current locale and (from Feature 7) the Care Patterns
  * retrieved for that turn, so a stored copy would be a stale one.
  */
-export async function loadHistory(conversationId: string, limit: number = HISTORY_WINDOW): Promise<ChatMessage[]> {
+export async function loadHistory(conversationId: string, limit: number): Promise<ChatMessage[]> {
+  if (limit <= 0) return [];
   // Take the newest `limit` rows, then flip back to chronological order: an
   // `order by created_at asc limit n` would keep the *oldest* turns instead.
   const { rows } = await query<{ role: ChatMessage["role"]; content: string }>(
@@ -92,20 +114,105 @@ export async function loadHistory(conversationId: string, limit: number = HISTOR
   return rows;
 }
 
-/** Append one turn and mark the conversation as freshly active. */
-export async function appendMessage(conversationId: string, message: ChatMessage): Promise<void> {
+/**
+ * A contiguous slice of the transcript, oldest first — the messages about to be folded
+ * into the summary (Feature 8). `offset` is the current `summarizedMessageCount`, so the
+ * slice always starts exactly where the existing summary stops.
+ */
+export async function loadMessageRange(
+  conversationId: string,
+  offset: number,
+  limit: number,
+): Promise<ChatMessage[]> {
+  if (limit <= 0) return [];
+  const { rows } = await query<{ role: ChatMessage["role"]; content: string }>(
+    `select role, content
+       from messages
+      where conversation_id = $1
+      order by created_at asc, id asc
+      offset $2
+      limit $3`,
+    [conversationId, offset, limit],
+  );
+  return rows;
+}
+
+/**
+ * Store a new running summary and move the boundary it covers (Feature 8).
+ *
+ * The `where` clause is optimistic concurrency, not decoration. Two turns of the same
+ * conversation running at once would both read the same `summarizedMessageCount`, both
+ * summarize the same slice, and the second write would move the boundary twice — silently
+ * hiding a batch of messages from the model with nothing to show it had happened. Guarding
+ * on the count the caller read means the loser writes nothing and simply tries again next
+ * turn. Returns whether the write landed.
+ */
+export async function saveSummary(
+  conversationId: string,
+  summary: string,
+  expectedCount: number,
+  newCount: number,
+): Promise<boolean> {
+  const { rowCount } = await query(
+    `update conversations
+        set summary = $1,
+            summarized_message_count = $2,
+            summary_updated_at = now()
+      where id = $3
+        and summarized_message_count = $4`,
+    [summary, newCount, conversationId, expectedCount],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** What one turn spent, as stored on the assistant message it produced (migration 0005). */
+export interface StoredUsage {
+  calls: ChatDebugCall[];
+  totals: ChatTokenUsage;
+  costUsd: number;
+}
+
+/**
+ * Estimated cost of a whole conversation, summed from what each turn recorded.
+ *
+ * This is the "~$0.05 per conversation" number the plan's economics rest on, read straight
+ * from the transcript rather than reconstructed from logs. Turns written before Feature 8,
+ * and user messages, have no `usage` and contribute nothing.
+ */
+export async function conversationCostUsd(conversationId: string): Promise<number> {
+  const { rows } = await query<{ cost: string | null }>(
+    `select coalesce(sum((usage->>'costUsd')::numeric), 0) as cost
+       from messages
+      where conversation_id = $1 and usage is not null`,
+    [conversationId],
+  );
+  return Number(rows[0]?.cost ?? 0);
+}
+
+/**
+ * Append one turn and mark the conversation as freshly active.
+ *
+ * `usage` is what the turn cost (Feature 8) and is attached to the assistant message the
+ * turn produced. It is deliberately part of the same statement as the insert: a cost record
+ * written separately is one that can go missing exactly when a turn was unusually expensive.
+ */
+export async function appendMessage(
+  conversationId: string,
+  message: ChatMessage,
+  usage?: StoredUsage,
+): Promise<void> {
   // Both statements in one round trip. The CTE runs the insert, and the update
   // is driven off its result so the two cannot disagree about which row to touch.
   await query(
     `with inserted as (
-       insert into messages (conversation_id, role, content)
-       values ($1, $2, $3)
+       insert into messages (conversation_id, role, content, usage)
+       values ($1, $2, $3, $4)
        returning conversation_id
      )
      update conversations
         set last_message_at = now()
       where id = (select conversation_id from inserted)`,
-    [conversationId, message.role, message.content],
+    [conversationId, message.role, message.content, usage ? JSON.stringify(usage) : null],
   );
 }
 
@@ -129,4 +236,3 @@ async function query<T extends QueryResultRow = QueryResultRow>(text: string, va
 }
 
 export type { Conversation };
-export { HISTORY_WINDOW };

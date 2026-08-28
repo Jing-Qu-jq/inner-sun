@@ -76,6 +76,59 @@ export interface ChatDebugCandidate {
 }
 
 /**
+ * Token counts for one upstream call.
+ *
+ * `cachedPromptTokens` is the slice of the prompt OpenAI served from its prompt cache and
+ * bills at a discount (Feature 8). It is the only observable proof that caching is working,
+ * so it is carried all the way to the inspector rather than being folded into the total.
+ */
+export interface ChatTokenUsage {
+  promptTokens: number;
+  cachedPromptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/**
+ * One upstream call made while answering a turn, and what it cost (Feature 8).
+ *
+ * A turn is several calls, not one — the match query, the embedding, sometimes a
+ * summarization, then the reply — and the cheap ones are cheap precisely because of the
+ * model tiering this feature enforces. Listing them individually is what makes that
+ * visible; a single total would hide the fact that the expensive model ran once.
+ */
+export interface ChatDebugCall {
+  /** Which step made it: match-query, match-embedding, summary, reply, reply-no-guidance. */
+  step: string;
+  model: string;
+  promptTokens: number;
+  cachedPromptTokens: number;
+  completionTokens: number;
+  /** Estimated USD, from the list prices in services/api/src/usage.ts. */
+  costUsd: number;
+}
+
+/**
+ * How the prompt for this turn was assembled (Feature 8).
+ *
+ * The counts are the cost control made legible: `verbatimMessages` is what was resent word
+ * for word, `summarizedMessages` is what was replaced by a few sentences instead. A long
+ * conversation should show the first number flat and the second one growing.
+ */
+export interface ChatDebugPrompt {
+  /** Messages replayed to the reply model word for word, this turn's message included. */
+  verbatimMessages: number;
+  /** Earlier messages represented by the running summary rather than resent. */
+  summarizedMessages: number;
+  /** The running summary in force for this turn. Absent until there is one. */
+  summary?: string;
+  /** True when this is the turn that folded older messages into the summary. */
+  summarizedThisTurn: boolean;
+  /** The cap on reply length in force, in tokens. */
+  maxReplyTokens: number;
+}
+
+/**
  * Why the reply is what it is (Feature 22).
  *
  * Present only when the request carried a valid inspector credential; an ordinary
@@ -98,9 +151,22 @@ export interface ChatDebug {
   /** How long retrieval took, in milliseconds. */
   retrievalMs: number;
   /** Token usage of the reply call. */
-  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  usage?: ChatTokenUsage;
   /** Which model answered. */
   model?: string;
+  /** How the prompt was assembled and how much of the history was summarized (Feature 8). */
+  prompt?: ChatDebugPrompt;
+  /** Every upstream call this turn made, in the order they were started (Feature 8). */
+  calls?: ChatDebugCall[];
+  /** Estimated cost of this turn in USD (Feature 8). */
+  turnCostUsd?: number;
+  /**
+   * Estimated cost of the whole conversation so far, this turn included (Feature 8).
+   *
+   * This is the number the plan's "~$0.05 per conversation" claim is about, which is why
+   * it is shown next to the turn cost rather than left to be added up by hand.
+   */
+  conversationCostUsd?: number;
   /**
    * The same message answered with the Care-Pattern guidance withheld, for
    * side-by-side comparison. Present only when comparison was requested AND
@@ -108,7 +174,7 @@ export interface ChatDebug {
    * would differ only by sampling noise, which demonstrates nothing.
    */
   replyWithoutGuidance?: string;
-  usageWithoutGuidance?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  usageWithoutGuidance?: ChatTokenUsage;
 }
 
 /** Response body for POST /chat. */

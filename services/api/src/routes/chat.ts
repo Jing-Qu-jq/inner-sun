@@ -8,11 +8,11 @@ import {
   type ChatRequest,
   type ChatResponse,
 } from "@innersun/shared";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { config } from "../config.js";
 import {
-  HISTORY_WINDOW,
   appendMessage,
+  conversationCostUsd,
+  countMessages,
   createConversation,
   getConversation,
   loadHistory,
@@ -21,19 +21,31 @@ import {
 } from "../conversations.js";
 import { AppError } from "../errors.js";
 import { createChatCompletion } from "../openai.js";
-import { buildSystemPrompt } from "../prompt.js";
+import { buildChatMessages } from "../prompt.js";
 import { isInspector, wantsComparison } from "../inspector.js";
 import { formatCarePatternGuidance, retrieveCarePatterns, type RetrievalResult } from "../retrieval.js";
+import { compactHistory, planCompaction, type CompactionResult } from "../summarize.js";
+import { TurnLedger } from "../usage.js";
 
 /**
  * POST /chat — the orchestrator endpoint (Features 4 and 5).
  *
- * The browser sends a message here instead of to api.openai.com, so the API key
- * stays in this process. History is threaded through PostgreSQL as of Feature 5,
- * and since Feature 7 every turn is matched against the Care Pattern library so
- * the reply is steered by researcher-authored guidance rather than by the model's
- * generic instincts. Still to come: prompt assembly and cost controls in Feature 8,
- * crisis screening in Feature 9.
+ * The browser sends a message here instead of to api.openai.com, so the API key stays in
+ * this process. History is threaded through PostgreSQL as of Feature 5; since Feature 7
+ * every turn is matched against the Care Pattern library so the reply is steered by
+ * researcher-authored guidance; and since Feature 8 the prompt is assembled for cost as
+ * well as for quality — the static half first so OpenAI can cache it, the older half of a
+ * long conversation replaced by a running summary, and every upstream call the turn made
+ * priced and recorded. Still to come: crisis screening in Feature 9.
+ *
+ * A turn's shape, in order:
+ *
+ *   1. Resolve the conversation and work out how much of it to replay verbatim.
+ *   2. Persist the student's message — before anything upstream, so it is never lost.
+ *   3. In parallel, on the cheap model: compact the history if it has overflowed, and
+ *      match the conversation to Care Patterns.
+ *   4. Assemble the prompt and make the one expensive call.
+ *   5. Record what it all cost, on the assistant message and in the log.
  */
 
 /**
@@ -63,6 +75,7 @@ const usageSchema = {
   additionalProperties: false,
   properties: {
     promptTokens: { type: "number" },
+    cachedPromptTokens: { type: "number" },
     completionTokens: { type: "number" },
     totalTokens: { type: "number" },
   },
@@ -101,6 +114,35 @@ const chatDebugSchema = {
     retrievalMs: { type: "number" },
     usage: usageSchema,
     model: { type: "string" },
+    // Prompt assembly and cost accounting (Feature 8).
+    prompt: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        verbatimMessages: { type: "number" },
+        summarizedMessages: { type: "number" },
+        summary: { type: "string" },
+        summarizedThisTurn: { type: "boolean" },
+        maxReplyTokens: { type: "number" },
+      },
+    },
+    calls: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          step: { type: "string" },
+          model: { type: "string" },
+          promptTokens: { type: "number" },
+          cachedPromptTokens: { type: "number" },
+          completionTokens: { type: "number" },
+          costUsd: { type: "number" },
+        },
+      },
+    },
+    turnCostUsd: { type: "number" },
+    conversationCostUsd: { type: "number" },
     replyWithoutGuidance: { type: "string" },
     usageWithoutGuidance: usageSchema,
   },
@@ -124,6 +166,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     { schema: { body: chatBodySchema, response: { 200: chatResponseSchema } } },
     async (request): Promise<ChatResponse> => {
       const { message, conversationId, locale: requestedLocale } = request.body;
+      const ledger = new TurnLedger();
 
       const conversation = await resolveConversation(conversationId, requestedLocale ?? DEFAULT_LOCALE);
       // An existing conversation keeps its locale unless this request asks to
@@ -133,34 +176,40 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         conversation.locale = requestedLocale;
       }
 
-      // Earlier turns, then this one. Loading one short of the window leaves
-      // room for the new message, so at most HISTORY_WINDOW turns go upstream.
-      const history = await loadHistory(conversation.id, HISTORY_WINDOW - 1);
+      // How much of this conversation goes to the model word for word, and whether enough
+      // has spilled past that window to be worth summarizing (Feature 8). Counted before
+      // this turn's message is stored, so `history` and `message` stay disjoint.
+      const plan = planCompaction(await countMessages(conversation.id), conversation.summarizedMessageCount);
+      const history = await loadHistory(conversation.id, plan.verbatimCount);
       const userMessage: ChatMessage = { role: "user", content: message };
 
       // Persisted before the upstream call, so a message is never lost to an
       // OpenAI failure: the student's turn is on record even when no reply is.
       await appendMessage(conversation.id, userMessage);
 
-      // Care Pattern retrieval (Feature 7). Runs on every turn, not once per conversation:
-      // what a student is dealing with emerges as they talk, so the match sharpens — or
-      // switches to a different pattern entirely — as the conversation grows. It costs one
-      // cheap completion plus one embedding, a fraction of the reply call it precedes.
-      const match = await retrieveCarePatterns({
-        history,
-        message,
-        summary: conversation.summary,
-      });
+      // The two cheap-model steps, run together because both must finish before the reply
+      // call can start and neither depends on the other. On the turns where a summarization
+      // happens it therefore costs almost no extra wall-clock time.
+      //
+      // Retrieval is handed the summary as it stood at the top of the turn, not the one
+      // compaction is writing right now. That is deliberate and harmless: the match query
+      // reads the summary plus the student's last few messages, and the messages being
+      // folded in this turn are twenty messages old — far outside that window either way.
+      const [compaction, match] = await Promise.all([
+        compactHistory(conversation, plan),
+        retrieveCarePatterns({ history, message, summary: conversation.summary }),
+      ]);
+      ledger.recordAll(compaction.calls);
+      ledger.recordAll(match.calls);
 
       const guidance = formatCarePatternGuidance(match.applied, conversation.locale);
-      const turn = [...history, userMessage].map(
-        (m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam,
-      );
-
-      const messages: ChatCompletionMessageParam[] = [
-        { role: "system", content: buildSystemPrompt({ locale: conversation.locale, carePatternStrategies: guidance }) },
-        ...turn,
-      ];
+      const promptOptions = {
+        locale: conversation.locale,
+        summary: compaction.summary,
+        history,
+        message,
+      };
+      const messages = buildChatMessages({ ...promptOptions, carePatternStrategies: guidance });
 
       // Pattern titles are researcher-authored, never student words, so they are safe to
       // log — and they are what makes a wrong match visible at all. `gap: true` marks a
@@ -179,6 +228,21 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         "care pattern match",
       );
 
+      // Message-content-free, like every other log line here: the counts say what happened
+      // to the prompt, never what was in it. A summary is derived from a student's words and
+      // is treated as such.
+      request.log.info(
+        {
+          conversationId: conversation.id,
+          outcome: compaction.outcome,
+          verbatimMessages: history.length + 1,
+          summarizedMessages: compaction.summarizedMessages,
+          foldedThisTurn: compaction.foldedThisTurn,
+          durationMs: compaction.durationMs,
+        },
+        "history compaction",
+      );
+
       // The inspector (Feature 22). `inspect` gates the payload; `compare` additionally asks
       // for the same turn answered with the guidance withheld, so the two can be shown side
       // by side. The comparison is skipped when no guidance was applied — with nothing to
@@ -188,22 +252,28 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
       const started = Date.now();
       const [completion, unguided] = await Promise.all([
-        createChatCompletion({ messages, model: config.openai.replyModel }),
+        createChatCompletion({ messages, model: config.openai.replyModel, cacheKey: conversation.id }),
         // In parallel: it is a second call on the same turn, and running it after the first
         // would make an inspected turn twice as slow as the one being demonstrated.
         compare
           ? createChatCompletion({
-              messages: [
-                { role: "system", content: buildSystemPrompt({ locale: conversation.locale }) },
-                ...turn,
-              ],
+              messages: buildChatMessages(promptOptions),
               model: config.openai.replyModel,
+              cacheKey: conversation.id,
             })
           : Promise.resolve(undefined),
       ]);
+      ledger.record("reply", completion.model, completion.usage);
+      // Counted too, even though no student ever sees it. It is a real call on a real bill,
+      // and the inspector's own switch says it doubles the cost of a turn — a cost figure
+      // that quietly excluded it would make that warning look untrue.
+      if (unguided) ledger.record("reply-no-guidance", unguided.model, unguided.usage);
+
+      const turn = ledger.toRecord();
 
       // Structured, message-content-free: this is a mental-health product, so
-      // the log records the shape of the exchange, never what was said.
+      // the log records the shape of the exchange, never what was said. Per-call token
+      // counts are Feature 8 AC 5 — the unit cost is watched from here.
       request.log.info(
         {
           conversationId: conversation.id,
@@ -211,7 +281,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           model: completion.model,
           turns: history.length + 1,
           carePatterns: match.applied.length,
-          usage: completion.usage,
+          calls: turn.calls,
+          usage: turn.totals,
+          turnCostUsd: turn.costUsd,
           durationMs: Date.now() - started,
         },
         "chat completion",
@@ -219,8 +291,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
       // Only the real reply is recorded. The comparison reply was never shown to a student
       // and must not become part of the transcript that later features summarize, analyze
-      // and export.
-      await appendMessage(conversation.id, { role: "assistant", content: completion.reply });
+      // and export. What the turn cost rides along with it (migration 0005).
+      await appendMessage(conversation.id, { role: "assistant", content: completion.reply }, turn);
 
       const response: ChatResponse = {
         conversationId: conversation.id,
@@ -228,7 +300,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         locale: conversation.locale,
       };
       if (inspect) {
-        response.debug = buildDebug(match, guidance, completion, unguided);
+        // Read after the turn is stored, so the figure includes this turn. One aggregate
+        // over one conversation's own rows, and only for a privileged viewer.
+        response.debug = buildDebug(match, compaction, guidance, completion, unguided, turn, {
+          verbatimMessages: history.length + 1,
+          conversationCostUsd: await conversationCostUsd(conversation.id),
+        });
       }
       return response;
     },
@@ -236,7 +313,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Assemble what the inspector shows (Feature 22).
+ * Assemble what the inspector shows (Features 22 and 8).
  *
  * Nothing here is computed for the occasion — every field is a fact the turn already
  * produced. That is deliberate: an inspector that changed how a turn ran would be showing
@@ -244,9 +321,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
  */
 function buildDebug(
   match: RetrievalResult,
+  compaction: CompactionResult,
   guidance: string,
   completion: Awaited<ReturnType<typeof createChatCompletion>>,
   unguided: Awaited<ReturnType<typeof createChatCompletion>> | undefined,
+  turn: ReturnType<TurnLedger["toRecord"]>,
+  context: { verbatimMessages: number; conversationCostUsd: number },
 ): ChatDebug {
   const appliedIds = new Set(match.applied.map((m) => m.id));
 
@@ -265,6 +345,16 @@ function buildDebug(
     retrievalMs: match.durationMs,
     usage: completion.usage,
     model: completion.model,
+    prompt: {
+      verbatimMessages: context.verbatimMessages,
+      summarizedMessages: compaction.summarizedMessages,
+      ...(compaction.summary ? { summary: compaction.summary } : {}),
+      summarizedThisTurn: compaction.outcome === "summarized",
+      maxReplyTokens: config.openai.maxReplyTokens,
+    },
+    calls: turn.calls,
+    turnCostUsd: turn.costUsd,
+    conversationCostUsd: Number(context.conversationCostUsd.toFixed(6)),
     ...(unguided ? { replyWithoutGuidance: unguided.reply, usageWithoutGuidance: unguided.usage } : {}),
   };
 }

@@ -340,9 +340,13 @@ flowchart LR
     方案会对向量前 10 条做重排序 (re-rank)）——但 v1 的匹配就是「嵌入 + 余弦」。</p>
 
   <p><b>让匹配可见。</b>上面这些步骤默认是看不见的——回复出现了，却没有任何地方说明它是被哪条模式塑造的。
-    聊天页面可以把它们全部呈现出来（命中的模式与分数、英文匹配查询、注入到提示中的指导内容，以及同一条消息在
-    「不给指导」的情况下再回答一次），但要经过一个<b>只可查看的凭据</b>，且默认关闭、需要主动开启。它刻意不是
-    研究员工具的管理员会话——那个会话可以发布和撤回临床指导。详见 PLAN.md Feature 22。</p>
+    聊天页面可以把它们全部呈现出来（命中的模式与分数、英文匹配查询、注入到提示中的指导内容，同一条消息在
+    「不给指导」的情况下再回答一次，以及成本控制落地之后新增的：提示词是怎么拼起来的、一段长对话里有多少消息
+    被摘要替代而不是原样重发、以及这一轮和整段对话各花了多少钱），但要经过一个<b>只可查看的凭据</b>，
+    且默认关闭、需要主动开启。它刻意不是研究员工具的管理员会话——那个会话可以发布和撤回临床指导。</p>
+  <p>凭据不被接受时，面板会明说。解锁这个动作完全发生在浏览器端，而服务端对一个错误的凭据只会返回与普通访客
+    完全一样的响应——所以如果不给这条提示，「检视功能没开」和「检视功能没查到东西」在屏幕上看起来一模一样，
+    而这恰恰是一个可观测性界面最不该发生的事。详见 PLAN.md Feature 22。</p>
 
   <h3>语言：英文知识库，按用户语言回复</h3>
   <ul>
@@ -376,21 +380,43 @@ flowchart LR
   <p><b>最佳体验：</b>做成<b>可点击的快捷回复气泡 (quick-reply chips)</b>——每个气泡确定性地映射到它的答案：不调用 LLM、无需匹配逻辑、零成本。</p>
 
   <!-- ===== 5 ===== -->
-  <h2 id="s5"><span class="num">5</span>成本控制 (Cost Control) 🟢 <span style="font-weight:400;color:var(--muted);font-size:1rem;">（语义缓存 → 未来版）</span></h2>
+  <h2 id="s5"><span class="num">5</span>成本控制 (Cost Control) ✅ <span style="font-weight:400;color:var(--muted);font-size:1rem;">（语义缓存 → 未来版）</span></h2>
   <p>每次对话约 $0.05，随规模增长真正要看的是单位成本 (unit cost)。按影响力排序的手段：</p>
   <table>
     <thead><tr><th>手段</th><th>阶段</th><th>作用</th></tr></thead>
     <tbody>
-      <tr><td><b>模型分级 (model tiering)</b></td><td><span class="pill v1">v1</span></td><td>用 <code>gpt-4o-mini</code> 做分类/安全/摘要；<code>gpt-4o</code> 只用于生成回复。<b>最大的杠杆。</b></td></tr>
-      <tr><td><b>历史摘要 (summarization)</b></td><td><span class="pill v1">v1</span></td><td>把较早的对话摘要化，而非每轮重发；完整历史会呈平方级增长。</td></tr>
-      <tr><td><b>提示词缓存 (prompt caching)</b></td><td><span class="pill v1">v1</span></td><td>OpenAI 对不变的系统提示前缀按折扣计费。几乎零成本即可启用。</td></tr>
-      <tr><td><b>Token 上限 + 限流</b></td><td><span class="pill v1">v1</span></td><td>限定 <code>max_tokens</code>；防滥用，避免免费额度被刷。</td></tr>
+      <tr><td><b>模型分级 (model tiering)</b></td><td><span class="pill v1">v1</span></td><td>用 <code>gpt-4o-mini</code> 做分类/安全/摘要/查询归一化；<code>gpt-4o</code> 只用于生成回复。<b>最大的杠杆。</b>若两者被配成同一个模型，API 会拒绝启动。</td></tr>
+      <tr><td><b>历史摘要 (summarization)</b></td><td><span class="pill v1">v1</span></td><td>把较早的消息折进一段运行中的摘要，而不是每轮重发：提示词不再变长，对话却仍然完整。</td></tr>
+      <tr><td><b>提示词缓存 (prompt caching)</b></td><td><span class="pill v1">v1</span></td><td>OpenAI 对见过的提示词前缀按半价计费。没有开关可开——它要的是<b>顺序</b>，见下。</td></tr>
+      <tr><td><b>Token 上限 + 限流</b></td><td><span class="pill v1">v1</span></td><td>每一次调用都带 <code>max_tokens</code>。防滥用、避免免费额度被刷属于功能 20。</td></tr>
       <tr><td><b>语义缓存 (semantic cache)</b></td><td><span class="pill future">未来</span></td><td>对重复的<em>常见问题</em>跳过模型调用。暂缓——对咨询帮助有限。<b>绝不</b>缓存个性化的情感回复。</td></tr>
     </tbody>
   </table>
   <div class="note plain"><span class="label">参考数字</span><br/>
     按 5 个用户 × 每天 1 次对话，一周约 <b>$1.8（含这些优化）对比 $2.6（不含提示词缓存）</b>。在此规模下绝对值很小；重点是
     随规模放大时你要乘的那个 <b>~$0.05/次对话</b> 的单位成本。</div>
+
+  <h3>提示词是怎么拼起来的——顺序本身就是成本控制</h3>
+  <p>提示词只在一个函数里组装（<code>services/api/src/prompt.ts</code>），而且顺序永远是这样：</p>
+  <pre><code>[system]  静态系统提示词                &#9488;  每一次请求、每一个学生、每一种语言都
+[system]  运行中的对话摘要（如果有）      &#9474;  完全一致的字节 —— 一段只会向后追加、
+[user/assistant]  最近的若干条消息       &#9496;  不会从前面改动的稳定前缀
+[system]  本轮指令                      &#9488;  语言提示，以及为「这一轮」检索到的
+[user]    刚刚到达的那条消息             &#9496;  关怀模式指导 —— 每轮都会变</code></pre>
+  <p>OpenAI 缓存的是提示词的<b>最长公共前缀</b>，以 128 个 token 为增量，且该前缀需超过 1,024 个 token 才会生效。
+  因此所有逐轮变化的内容都必须放在<b>最后</b>：把检索到的指导放在靠前的位置读起来更自然，但那样就完全没有可缓存的
+  公共前缀了。这也是静态提示词里一个模板槽都不留的原因——只要往里插一个 <code>{{locale}}</code>，缓存就会按语言被
+  悄无声息地劈成两半。</p>
+  <p>历史消息的回放方式出于同一个理由。「只发最近的 N 条」同样能限制提示词长度，却糟糕得多：那样窗口每轮都会向前
+  滑动，前缀在静态提示词之后立刻就变了——而静态提示词本身约 840 个 token，低于下限，于是<b>永远不会有任何缓存命中</b>。
+  实际做法是回放整个<em>尚未被摘要的尾部</em>：它只会向后追加，而一次摘要会把它直接压回去。在真实的提示词形态上实测：
+  <b>1,754 个提示 token 中有 1,536 个来自缓存</b>，约 88%。</p>
+
+  <h3>一轮对话花了多少钱，以及这个数字从哪来</h3>
+  <p>一轮对话向上游发起的每一次调用，都会连同模型名与 token 数一起被记录下来，按
+  <code>services/api/src/usage.ts</code> 里的价目表估算，并作为 <code>messages.usage</code> 存在该轮生成的那条
+  助手消息上。于是一段对话的单位成本只是一条 SQL，而不需要从日志里拼回来；同一份明细也会出现在 Feature 22 的检视面板里。
+  这些价格只用于可观测性——它们写在应用代码里，OpenAI 调价时就会过时；账单才是权威。</p>
 
   <!-- ===== 6 ===== -->
   <h2 id="s6"><span class="num">6</span>商业模式 (Monetization)</h2>
