@@ -294,10 +294,18 @@ design it re-ranks the vector top-10 by actually reading them) — but the v1 ma
 
 **Seeing a match.** Every step above is invisible by default — a reply arrives and nothing says
 which pattern shaped it. The chat page can show all of it (matched patterns and scores, the English
-match query, the guidance injected into the prompt, and the same message answered again with that
-guidance withheld) behind a **visibility-only credential** that is off unless deliberately switched
-on. It is deliberately not the researcher tool's admin session, which can publish and retire
-clinical guidance. See PLAN.md Feature 22.
+match query, the guidance injected into the prompt, the same message answered again with that
+guidance withheld, and — since the cost controls landed — how the prompt was assembled, how much of a
+long conversation was summarized rather than resent, and what the turn and the conversation have
+cost) behind a **visibility-only credential** that is off unless deliberately switched on. It is
+deliberately not the researcher tool's admin session, which can publish and retire clinical guidance.
+
+**The credential is checked when it is entered, and the answer distinguishes the two failures that
+need different fixes** — a token this instance does not accept, versus an instance with the
+inspector switched off entirely. Unlocking is otherwise client-side, and a wrong credential is
+answered with a response identical to an ordinary visitor's, so without that check "the inspector is
+off" and "the inspector found nothing" look the same on screen, which is the one thing an
+observability surface must never do. See PLAN.md Feature 22.
 
 ### Language: English knowledge base, replies in the user's language
 
@@ -350,21 +358,63 @@ answer — no LLM call, no matching logic, and zero cost.
 
 ---
 
-## 5. Cost Control 🟢 (Semantic caching → Future)
+## 5. Cost Control ✅ (Semantic caching → Future)
 
 At ~$0.05 per conversation, unit cost is what matters as we scale. Levers, in order of impact:
 
 | Lever | Status | What it does |
 |-------|--------|--------------|
-| **Model tiering** | 🟢 v1 | `gpt-4o-mini` for classify / safety / summarize; `gpt-4o` only for the counseling reply. **Biggest lever.** |
-| **History summarization** | 🟢 v1 | Summarize older turns instead of resending them; keeps prompts short (full history grows quadratically). |
-| **Prompt caching** | 🟢 v1 | OpenAI bills the unchanged system-prompt prefix at a discount. Nearly free to enable, so it stays in v1. |
-| **Token caps + rate limiting** | 🟢 v1 | Bounded `max_tokens`; abuse protection so free anonymous usage can't be farmed. |
+| **Model tiering** | ✅ v1 | `gpt-4o-mini` for classify / safety / summarize / normalize; `gpt-4o` only for the counseling reply. **Biggest lever.** Enforced at startup: the API refuses to boot with both pointed at the same model. |
+| **History summarization** | ✅ v1 | Older messages are folded into a running summary instead of being resent, so the prompt stops growing while the conversation stays whole. |
+| **Prompt caching** | ✅ v1 | OpenAI bills a prompt prefix it has seen before at half price. Nothing to switch on — what it needs is **ordering**, below. |
+| **Token caps + rate limiting** | ✅ v1 | Every call carries a `max_tokens`. Abuse protection so free anonymous usage can't be farmed is Feature 20. |
+| **Reply length** | ✅ v1 | The prompt matches reply length to the moment instead of defaulting to long. Measured: completion tokens fell from a 122–219 band to **9–71** on the same messages. |
 | **Semantic cache** | 🔵 Future | Skip the model call for repeated *FAQ* questions. Deferred: needs a vector-match service, and it barely helps counseling (real venting is personal, not repeated). **Never** cache a personalized emotional reply. |
 
 > Reference: at 5 users × 1 conversation/day, a week costs ≈ **$1.8 with these optimizations vs ≈ $2.6
 > without prompt caching**. The absolute number is tiny at this scale; the point is the **~$0.05/conversation
 > unit cost** you multiply as you grow.
+
+### Prompt assembly, and why the order is the cost control
+
+The prompt is built in one function (`services/api/src/prompt.ts`) and always in this order:
+
+```
+[system]  static system prompt          ─┐  the same bytes on every request, for every
+[system]  running summary, if any        │  student and every language — a stable prefix
+[user/assistant]  recent messages       ─┘  that grows only by appending
+[system]  turn directive                ─┐  the language note and the Care Pattern guidance
+[user]    the message that just arrived ─┘  retrieved for THIS turn — changes every turn
+```
+
+OpenAI caches the **longest common prefix** of a prompt, in 128-token increments, once that
+prefix passes 1,024 tokens. So anything that varies per turn has to go **last**: the retrieved
+guidance reads more naturally near the top, and putting it there would leave no shared prefix
+to cache at all. That is the whole reason the static prompt carries no template slots — a single
+`{{locale}}` interpolated into it would split the cache by language, invisibly.
+
+The same argument decides how history is replayed. Sending "the newest N messages" bounds the
+prompt just as well and is much worse, because the window then slides forward every turn and the
+prefix changes immediately after the static prompt — which on its own is ~840 tokens, below the
+minimum, so **nothing would ever be cached**. Instead the whole *unsummarized tail* is replayed;
+it only ever grows by appending, and a summarization takes it straight back down. Measured on
+the real prompt shape: **1,536 of 1,754 prompt tokens served from cache**, about 88%.
+
+**Output is the expensive half.** On `gpt-4o` a completion token costs four times a prompt token, so
+the length of a reply is a bigger lever than most prompt-side savings — and it is the one a model
+will quietly work against. `max_tokens` caps the worst case and does nothing about a model that
+answers "good morning" in a hundred words, which is the default behaviour. Saying so explicitly in
+the static prompt — two to five sentences by default, room when a student discloses something
+painful, one concrete suggestion rather than a menu — cut completion tokens by roughly two thirds
+while a heavy first disclosure still drew a full three paragraphs. It cuts padding, not care.
+
+### What a turn costs, and how that is known
+
+Every upstream call a turn makes is recorded with its model and token counts, priced from a list
+in `services/api/src/usage.ts`, and stored as `messages.usage` on the assistant message that turn
+produced. A conversation's unit cost is then one query rather than a reconstruction from logs, and
+the same breakdown is shown in the Feature 22 inspector. The prices are for observability only —
+they live in application code and drift when OpenAI's do; the invoice is authoritative.
 
 ---
 

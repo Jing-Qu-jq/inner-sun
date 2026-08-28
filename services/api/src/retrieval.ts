@@ -4,6 +4,7 @@ import { dbQuery } from "./db.js";
 import { embedText } from "./embeddings.js";
 import { createChatCompletion } from "./openai.js";
 import { loadPrompt } from "./prompt.js";
+import type { RawCall } from "./usage.js";
 
 /**
  * Care Pattern retrieval and matching — the RAG pipeline (Feature 7).
@@ -92,6 +93,12 @@ export interface RetrievalResult {
    * most surprising matches are explained by this sentence rather than by the vector search.
    */
   query?: string;
+  /**
+   * The upstream calls this pipeline made — the normalizer, and the embedding when it got
+   * that far (Feature 8). Handed back rather than logged here so the whole turn's cost is
+   * accounted for in one ledger, in the order the calls happened.
+   */
+  calls: RawCall[];
 }
 
 export interface MatchSource {
@@ -106,7 +113,11 @@ export interface RetrievalInput {
   history: ChatMessage[];
   /** The message that arrived on this turn. */
   message: string;
-  /** The conversation's running summary. Always null until Feature 8 writes one. */
+  /**
+   * The conversation's running summary (Feature 8), or null before one exists. It stands in
+   * for the messages that are no longer replayed, so a match on a long conversation still
+   * reflects what the student came to talk about and not only the last few turns.
+   */
   summary?: string | null;
 }
 
@@ -119,6 +130,7 @@ export interface RetrievalInput {
 export async function retrieveCarePatterns(input: RetrievalInput): Promise<RetrievalResult> {
   const started = Date.now();
   let matchQuery: string | undefined;
+  const calls: RawCall[] = [];
   const done = (outcome: MatchOutcome, applied: CarePatternMatch[], candidates: CarePatternMatch[]): RetrievalResult => ({
     outcome,
     applied,
@@ -126,18 +138,25 @@ export async function retrieveCarePatterns(input: RetrievalInput): Promise<Retri
     gap: outcome === "below_floor",
     durationMs: Date.now() - started,
     query: matchQuery,
+    calls,
   });
 
   const source = buildMatchSource(input);
   if (source.studentChars < config.retrieval.minSignalChars) {
+    // Nothing is appended to `calls`: a skipped step costs nothing and should read as an
+    // absence in the ledger, not as a zero-token call that looks like it ran.
     return done("low_signal", [], []);
   }
 
   try {
-    matchQuery = await normalizeToEnglish(source.text);
+    const normalized = await normalizeToEnglish(source.text);
+    calls.push(normalized.call);
+    matchQuery = normalized.query;
     if (!matchQuery) return done("low_signal", [], []);
 
-    const candidates = await rankCarePatterns(matchQuery);
+    const ranked = await rankCarePatterns(matchQuery);
+    calls.push(ranked.call);
+    const candidates = ranked.matches;
     if (candidates.length === 0) return done("no_patterns", [], []);
 
     const applied = candidates.filter((c) => c.similarity >= config.retrieval.relevanceFloor);
@@ -204,14 +223,17 @@ export function buildMatchSource({ history, message, summary }: RetrievalInput):
  * ("An international student feels..."), and a query written the same way sits closer to
  * them in vector space than a raw first-person venting message does.
  *
- * Returns undefined when there is nothing worth matching on.
+ * `query` is undefined when there is nothing worth matching on. The call is reported either
+ * way, because it happened either way — a normalizer that answers `NONE` to small talk still
+ * costs a few hundred tokens, and a cost model that only counted successful matches would
+ * understate exactly the turns that are cheapest to fix.
  *
  * Exported so `npm run retrieval:calibrate` measures the very pipeline that runs in
  * production. A calibration script with its own copy of this step would be calibrating
  * something else, and the floor it recommended would be a number about a different system.
  */
-export async function normalizeToEnglish(source: string): Promise<string | undefined> {
-  const { reply } = await createChatCompletion({
+export async function normalizeToEnglish(source: string): Promise<{ query?: string; call: RawCall }> {
+  const { reply, model, usage } = await createChatCompletion({
     model: config.openai.utilityModel,
     maxTokens: MAX_MATCH_QUERY_TOKENS,
     // Deterministic: the same conversation should produce the same match, so that a floor
@@ -223,9 +245,10 @@ export async function normalizeToEnglish(source: string): Promise<string | undef
     ],
   });
 
+  const call: RawCall = { step: "match-query", model, usage };
   const query = reply.trim();
-  if (!query || query.toUpperCase().startsWith(NO_SITUATION)) return undefined;
-  return query;
+  if (!query || query.toUpperCase().startsWith(NO_SITUATION)) return { call };
+  return { query, call };
 }
 
 /**
@@ -235,9 +258,11 @@ export async function normalizeToEnglish(source: string): Promise<string | undef
  * match, and how strongly?" without a floor being applied to the answer — deciding the
  * floor is the whole point of running it.
  */
-export async function rankCarePatterns(queryText: string): Promise<CarePatternMatch[]> {
-  const { vector } = await embedText(queryText);
-  return searchCarePatterns(vector);
+export async function rankCarePatterns(
+  queryText: string,
+): Promise<{ matches: CarePatternMatch[]; call: RawCall }> {
+  const { vector, model, usage } = await embedText(queryText);
+  return { matches: await searchCarePatterns(vector), call: { step: "match-embedding", model, usage } };
 }
 
 interface PatternRow {

@@ -14,6 +14,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminFaqRoutes } from "./routes/admin-faq.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { logRetrievalReadiness } from "./retrieval.js";
+import { logCostControls } from "./usage.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -62,9 +63,15 @@ export function buildServer() {
         paths: [
           "req.headers.authorization",
           "req.headers.cookie",
+          // The Feature 22 inspector credential. Fastify's default serializer does not log
+          // headers at all, so this masks nothing today — which is the point: it is here so
+          // that turning on header logging some day cannot quietly start printing a secret.
+          'req.headers["x-innersun-inspect"]',
           "req.body",
           "*.apiKey",
           "*.OPENAI_API_KEY",
+          "*.INSPECTOR_TOKEN",
+          "*.inspectorToken",
         ],
         censor: "[redacted]",
       },
@@ -97,6 +104,10 @@ export function buildServer() {
     // replies. Deliberately not awaited: it is a report, not a precondition for serving.
     app.ready(() => {
       void logRetrievalReadiness(app.log);
+      // The Feature 8 cost controls, for the same reason: model tiering, the token caps, the
+      // history window and prompt caching all fail by being quietly expensive rather than by
+      // breaking, so each is stated once at boot where it can be read against the intent.
+      logCostControls(app.log);
     });
   } else {
     app.log.warn("POST /chat is disabled (ENABLE_CHAT_ROUTES=false) — admin-only instance");

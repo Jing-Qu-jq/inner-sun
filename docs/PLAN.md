@@ -9,7 +9,7 @@
 - **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, and Feature 22 was added and built straight after Feature 7; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, and Feature 23 was added mid-Phase-1 and sits between Features 9 and 10 where it will be built; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
 ### The one exception to localhost-only (2026-08-15)
 A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
@@ -136,7 +136,7 @@ Replace the direct browser→OpenAI call with a call to our `/chat` API.
 4. ✅ Loading state renders as a faded, pulsing "…" bubble; a failed turn replaces that placeholder with a distinct muted-red bubble instead of a fake assistant reply. Verified by stopping the API mid-session — "We couldn't reach InnerSun…" — and by four component tests covering the specific, generic and recoverable cases.
 5. ✅ Nothing sensitive reaches the browser. A production build (`CI=true npm run build:web`) contains no `sk-…` string, not the real key's value, no `OPENAI_API_KEY`, and none of the system prompt (checked against seven distinctive phrases). The only `api.openai.com` occurrence anywhere in `build/` is inside a source comment describing what the code no longer does.
 
-**What changed on the server.** Feature 4's in-memory `Map` is gone; `services/api/src/conversations.ts` now reads and writes the Feature 3 tables. Nothing is deleted — the last 20 turns are *replayed* to the model while the full transcript stays on record, which is what makes Feature 8's summarization, Feature 14's analytics and Feature 16's export/delete obligations possible at all. The system prompt is deliberately **not** stored: it is rebuilt every turn from the current locale and (from Feature 7) that turn's retrieved Care Patterns, so a stored copy would be a stale one.
+**What changed on the server.** Feature 4's in-memory `Map` is gone; `services/api/src/conversations.ts` now reads and writes the Feature 3 tables. Nothing is deleted — the last 20 turns are *replayed* to the model while the full transcript stays on record, which is what makes Feature 8's summarization, Feature 14's analytics and Feature 16's export/delete obligations possible at all. ✅ Feature 8 has since replaced that fixed window: the messages that fall out of it are folded into a running summary rather than simply dropped, so a long conversation stays whole. Nothing is deleted there either, which is what would let a summary be recomputed differently later. The system prompt is deliberately **not** stored: it is rebuilt every turn from the current locale and (from Feature 7) that turn's retrieved Care Patterns, so a stored copy would be a stale one.
 
 **Design decisions worth carrying forward:**
 - **Turns are sent one at a time**, queued in the Chat component. Two requests in flight against one conversation interleave server-side as user-1, user-2, reply-2, reply-1, and a first pair sent together creates *two* conversations because neither knows the id yet. Queueing costs nothing perceptible: both messages and their placeholders still appear instantly, only the network calls are ordered.
@@ -185,7 +185,7 @@ The core differentiator: match the conversation to Care Patterns and steer the r
 **Depends on:** Features 5, 6.
 
 **AC (all met — verified against a live database and live OpenAI, 2026-08-23):**
-1. ✅ The match query is built in `services/api/src/retrieval.ts` from the conversation — the `conversations.summary` column (null until Feature 8 writes it, read already) plus the student's recent messages — and normalized to English by `gpt-4o-mini` using `src/prompts/match-query.md`.
+1. ✅ The match query is built in `services/api/src/retrieval.ts` from the conversation — the `conversations.summary` column (read here from the start; ✅ Feature 8 now writes it, so the match on a long conversation reflects its whole arc rather than only the recent turns) plus the student's recent messages — and normalized to English by `gpt-4o-mini` using `src/prompts/match-query.md`.
 2. ✅ The query is embedded with the same `text-embedding-3-small` that embedded every pattern's `situation`, then ranked by pgvector cosine similarity. Top-N and their scores are logged on every turn.
 3. ✅ The floor gates in both directions, verified live. *"I stay up until 3am to call my parents back home and then I'm useless in my 9am lecture"* → **Sleep disruption & living across time zones, 0.7352**, strategies injected. *"someone cut the lock and stole my bike outside the library"* → best candidate 0.2764, logged `outcome: "below_floor", gap: true`, no guidance injected, and the student still got a warm reply.
 4. ✅ Matching re-runs every turn, and switching topics switches the match: mid-conversation the student moved from sleep to money and *Financial pressure & the cost of studying abroad* took first place at **0.7276**.
@@ -224,7 +224,7 @@ The pattern's strategies are *"a fixed weekly call rather than nightly improvisa
 
 **What it costs.** About **1.15 s** added to each turn (one `gpt-4o-mini` call plus one embedding, both before the reply call, which they gate) and roughly **+140 prompt tokens** when a pattern is injected — 916 vs 778 on the same message. In money that is a fraction of a cent per turn against the reply's ~$0.005. The latency is the real cost, and the knob for it already exists: AC 4 allows re-matching every few turns rather than every turn if it ever needs to be bought back.
 
-**Not done here, on purpose:** gap flags are logged, not yet persisted (Feature 19 owns collecting them); the summary half of the match query stays null until Feature 8 writes summaries; the questionnaire cold start belongs to Feature 13; and re-ranking the vector top-10 with an LLM remains the *Future* hybrid design, not V1.
+**Not done here, on purpose:** gap flags are logged, not yet persisted (Feature 19 owns collecting them); the summary half of the match query stayed null until Feature 8 wrote summaries (✅ closed); the questionnaire cold start belongs to Feature 13; and re-ranking the vector top-10 with an LLM remains the *Future* hybrid design, not V1.
 
 ## Feature 22: Retrieval inspector on the chat page ✅ (done)
 See *why the reply is what it is*, from the student's own chat page, without reading server logs.
@@ -235,7 +235,7 @@ Feature 7 made the reply Care-Pattern-grounded, but everything that decides it �
 **Deliberately NOT the Feature 17 admin tool.** That tool is for researchers authoring patterns, and it is a separate app. This is an inspector on the student-facing chat page: same conversation, same replies a visitor gets, with a panel that opens underneath them.
 
 **AC (all met — verified against a live API, live database and live OpenAI in a real browser, 2026-08-23):**
-1. ✅ `?inspect=1` reveals the unlock bar; the token then rides on the `X-InnerSun-Inspect` header. An ordinary visitor's response carries the same three keys it always did (`conversationId`, `reply`, `locale`) — verified with no header and with a wrong token — and a visitor's page contains no inspector markup at all (checked in the DOM after a real turn: `.inspector-panel` count 0, no matching text anywhere).
+1. ✅ `?inspect=1` reveals the unlock bar; the token then rides on the `X-InnerSun-Inspect` header. An ordinary visitor's response carries the same three keys it always did (`conversationId`, `reply`, `locale`) — verified with no header and with a wrong token — and a visitor's page contains no inspector markup at all (checked in the DOM after a real turn: `.inspector-panel` count 0, no matching text anywhere). ✅ **Amended 2026-08-27:** the token is now checked at unlock via `GET /inspect`, and a rejection says which of the two failures it is (see below). It said nothing at all before, and the silence cost real time twice.
 2. ✅ Each inspected reply shows a badge — *"Matched: Sleep disruption & living across time zones · 0.7525"* — over a panel carrying `outcome: applied`, the floor in force (0.54), the English match query, and every candidate with its score and whether it was applied (0.7525 ✓, 0.5010, 0.4875).
 3. ✅ The injected block is shown verbatim, strategies, "do not" items and escalation note included — so what the model was told is inspectable, not inferred.
 4. ✅ A switch adds a second reply with the guidance withheld, rendered beside the real one. Off by default, and **skipped entirely when nothing was applied** — with nothing to withhold, two replies would differ only by sampling noise, so the second `gpt-4o` call is not made.
@@ -267,19 +267,63 @@ The pattern's strategies are *"the calls are a lifeline, not a bad habit"*, *"a 
 
 **Found only by running it:** an inspected bubble overflowed the message column and clipped the reply, because `react-chat-elements` gives its bubble a 20px left margin that a plain `width: 100%` ignores. Static checks and unit tests were all green while it looked broken on screen.
 
-**The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: Feature 8's running summary and token budget, **Feature 9's crisis detection — how the signal was detected**, and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
+**Amended 2026-08-27 — a rejected token must not fail silently.** Unlocking the bar is entirely client-side: the browser cannot validate the token, and by design the API answers a wrong one with a response byte-identical to an ordinary visitor's. Those two facts together produced a genuinely bad failure — an unlocked bar, a normal reply, and no panel, which looks exactly like a working inspector that had nothing to report. It was hit twice for real: once with a mistyped token, and once when a stale API instance was still holding port 3001 with an older token while `npm run dev`'s own API had died with `EADDRINUSE`. The bar now says *"That reply came back with no inspector data. The token is wrong, or the API is running without INSPECTOR_TOKEN set."* whenever a turn returns no `debug` while a token is set.
+
+**Amended again the same day — fail at the point of the mistake.** Reporting the rejection *after* a turn was still the wrong place: the student's message had already been sent and answered before anything said the token was wrong. `GET /inspect` now gives the unlock button something to ask, and it answers in three distinguishable ways because they need different fixes — **204** the token works, **401** it does not match this instance, **404** `INSPECTOR_TOKEN` is unset so the inspector does not exist here, which is the same answer an unknown route gives and is what keeps "unset means the feature does not exist" true for this endpoint too. Nothing is stored until the API says yes. Rate limited on the admin login's budget (10 per 15 minutes), and verified live in all four states plus the limiter. This is **not** a new oracle: a token could already be probed by sending chat messages, and the only thing that changes is that probing now costs *us* nothing rather than an OpenAI call per guess. The post-turn message stays as a backstop for a token that stops working mid-session.
+
+This leaks nothing: someone guessing tokens can already see that no panel appeared, so the message tells them only what the screen told them. The verdict is judged against the token as it stood when the turn was *sent* (held in a ref), because unlocking mid-flight would otherwise report a rejection that never happened, and entering a new token clears the old verdict. The general point is worth keeping: **an observability surface that fails silently is worse than no observability surface**, because it converts "this is off" into "this found nothing", and those two readings lead somewhere very different.
+
+**The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: ✅ Feature 8's prompt assembly and token budget (delivered — the panel now shows how many messages went in full versus were replaced by the summary, the summary text itself, every upstream call with its model and tokens, and what the turn and the conversation have cost), **Feature 9's crisis detection — how the signal was detected**, and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
 
 **Not done here, on purpose:** the rows those later features will add, since the decisions they show do not exist yet.
 
-## Feature 8: Prompt assembly + cost controls 🟢
+## Feature 8: Prompt assembly + cost controls 🟡 (built and verified live; prompt caching needs real traffic to confirm)
 Assemble the final prompt and keep per-conversation cost low.
 **Depends on:** Feature 7.
+
 **AC:**
-1. Prompt = static system prompt (English) + injected Care-Pattern strategies + conversation context + "respond in {locale}" instruction. *(The static prompt already exists at `services/api/src/prompts/system-prompt.md`, with `{{locale}}` and `{{care_pattern_strategies}}` slots to fill here.)*
-2. **Model tiering:** `gpt-4o-mini` for classify/normalize/summarize; `gpt-4o` only for the counseling reply.
-3. **History summarization:** older turns are summarized instead of resent; prompts stay bounded.
-4. **Prompt caching** enabled (static prefix first) and `max_tokens` capped.
-5. Token usage per message is logged (so we can watch the ~$0.05/conversation unit cost).
+1. ✅ Prompt = static system prompt (English) + conversation context + injected Care-Pattern strategies + the "respond in {locale}" instruction. The static prompt at `services/api/src/prompts/system-prompt.md` no longer carries template slots; the two that varied per turn moved to a new `turn-directive.md`, sent **after** the conversation. Both are assembled in one place, `buildChatMessages()` in `services/api/src/prompt.ts`.
+2. ✅ **Model tiering.** `gpt-4o-mini` normalizes the match query and writes the running summary; `text-embedding-3-small` embeds; `gpt-4o` writes the reply and nothing else. Visible per turn in the inspector's call table and in the `chat completion` log line. Configuring both tiers to the same model is refused at startup — verified.
+3. ✅ **History summarization.** Older messages are folded into `conversations.summary` and stop being replayed. Verified live: with a 6-message window and a batch of 4, turn 6 folded 4 messages (`summarizedThisTurn: true`), the verbatim count then held flat at 7 while the conversation kept growing, and the model still answered *"Do you remember what I said about my 9am lecture?"* correctly — from the summary alone, since those messages were no longer in the prompt.
+4. 🟡 **Prompt caching and `max_tokens`.** Caps are on every call — verified, including that the API refuses to start on a non-positive one. Caching is ordered for and instrumented, and measured working on the exact prompt shape `buildChatMessages()` produces: **1,536 of 1,754 prompt tokens served from cache, ~88%**. It is **not** observed on a live conversation, and six experiments below establish why — including one that rules out the fix this plan previously recommended. This AC stays 🟡 rather than being quietly called done.
+5. ✅ **Token usage per message is logged** — and stored. Every upstream call a turn makes is priced and recorded, in the log line and as `messages.usage` (migration 0005) on the assistant message that turn produced. Read back from the database: a six-turn conversation cost **$0.0337**, a seven-turn one **$0.0422** — both under the $0.05 the plan budgets — and one turn's stored record shows `summary` and `match-query` on `gpt-4o-mini-2024-07-18` against a single `gpt-4o-2024-08-06` reply, which is AC 2 visible in the data rather than asserted.
+
+**A window bug that would have made caching impossible on its own.** Fixing it turned out not to be sufficient — see the measurements below — but it is a genuine defect and it had to go regardless. The first version of this feature replayed "the newest N messages", which is the obvious way to bound a prompt. It bounds it correctly and it makes caching *unreachable*: the window slides forward two messages every turn, so the prompt's prefix changes immediately after the static system prompt — and that prompt is **842 tokens**, below OpenAI's 1,024-token minimum for caching. Every turn of a seven-turn conversation reported `cachedPromptTokens: 0`, and every reply was perfectly good. This is the failure mode the whole feature is built around: a wrongly ordered prompt does not look wrong, it just costs more. The lesson survives the fact that caching still did not engage afterwards — a sliding window forecloses the discount permanently, whereas a stable prefix merely has to wait for traffic.
+
+The fix is to replay the **whole unsummarized tail** instead, which only ever grows by appending. The prefix is then stable between summarizations, and a summarization resets it — one cache miss roughly every `HISTORY_SUMMARY_BATCH` messages. The tail stays bounded because a fold takes it straight back down to `HISTORY_VERBATIM_MESSAGES`, so the prompt is never longer than `verbatim + batch - 1` messages.
+
+**Why caching still reports zero on a live conversation, measured rather than assumed.** With the ordering fixed, six-turn conversations still reported `cachedPromptTokens: 0` on every reply. Four experiments against live OpenAI, in order:
+
+| Experiment | Result |
+| --- | --- |
+| Same prompt sent twice, seconds apart | **1,280 of 1,414 cached.** The plumbing works and the SDK surfaces it. |
+| Same prompt shape, different tail (a proper prefix), prefix seen minutes earlier | **1,536 of 1,754 cached.** Prefix caching works on our shape. |
+| Live conversation with `prompt_cache_key`, and again without it | 0 both ways. The key is neither the cause nor the cure. |
+| Turn N then turn N+1, prefix made brand new with a nonce, 0-second and 8-second gaps | **0 both ways.** |
+| Static prompt temporarily padded to ~1,220 tokens, six live requests sharing it over a minute | **0.** |
+| Same padding, with `prompt_cache_key` removed as well | **0.** |
+
+The hits in rows one and two were against prefixes established *minutes* earlier by repeated identical runs. Everything else says the same thing: OpenAI's automatic caching does not serve a prefix that has only ever appeared as the head of a handful of differing prompts, however long that prefix is. In a conversation every turn's prompt is novel, so there is nothing for the cache to serve.
+
+**The obvious lever was tried and does not work.** The static prompt is 842 tokens, 182 short of the 1,024-token floor, and the natural conclusion is that pushing it over would give every conversation one permanently warm shared prefix, hit from the first message. It was padded to ~1,220 tokens temporarily and measured: still zero, across two conversations and six requests, with and without `prompt_cache_key`. The padding was reverted. This is worth recording precisely because it is the change someone will otherwise reach for — it costs tokens on every call and buys nothing observable at this traffic level.
+
+What is left is volume. Caching engaged reliably only against a prefix that had been sent repeatedly over minutes, which is what real concurrent traffic looks like and what a single developer sending one message at a time never produces. So this AC verifies itself at Feature 21, or under a load test that replays the same opening turns concurrently — not on a laptop.
+
+**Design decisions worth carrying forward:**
+- **The static prompt must stay static, and that is now a rule rather than a habit.** A single `{{...}}` slot in `system-prompt.md` would split the cache by whatever it interpolates — by language, in the case of the `{{locale}}` that used to live there — and nothing anywhere would report it. The file carries a comment saying so, and `loadPrompt()` strips HTML comments so such notes cost no tokens and cannot be read as instructions.
+- **Summarization runs in parallel with retrieval, not after the reply.** Both are cheap-model calls that must finish before the expensive one can start, so on the turns where a summarization happens it adds almost no wall-clock time. Running it after the reply would have been simpler and would have made the turn's own prompt unbounded, and its cost invisible to the inspector on the turn that paid it.
+- **The summary is written in English regardless of the conversation's language.** It is working material — it also feeds Feature 7's match query, which is normalized to English anyway — and the static prompt now tells the model explicitly that application notes may be English and are not a signal about which language to answer in.
+- **A boundary is stored, not just a summary.** `summarized_message_count` records how many of the oldest messages `summary` stands in for. Without it the next turn would either re-summarize the same messages or resend ones the summary already covers. The write is guarded on the count that was read, so two concurrent turns cannot advance the boundary twice and silently hide a batch of messages from the model.
+- **An empty summary is refused rather than stored.** Storing one would move the boundary past messages that nothing now describes — the only way this design can actually lose part of a conversation.
+- **Summarization degrades, it never fails a turn.** A failed summarize leaves the boundary where it was and the turn proceeds on the verbatim window alone, which is exactly what every turn did before this feature.
+- **Cost is stored on the message, not only logged.** `messages.usage` is one `jsonb` column, so the unit cost this feature exists to watch is a single query rather than a reconstruction from logs, and Feature 19 inherits it. The comparison reply the inspector can request is counted too — the switch warns that it doubles the cost of a turn, and a figure that quietly excluded it would make that warning look untrue.
+- **The cheapest output token is the one not generated.** `max_tokens` caps the worst case; it does nothing about a model that answers "good morning" in a hundred words, which `gpt-4o` will happily do. The static prompt now tells it to match length to the moment: two to five sentences by default, one or two for a greeting, room when a student discloses something painful, one concrete suggestion rather than a menu, and never a numbered list unless asked. Measured before and after on the same four messages, completion tokens fell from a 122–219 band to **9–71**, while a heavy first disclosure still drew 140 tokens across three short paragraphs. Output is billed at four times input on `gpt-4o`, so this is a real cost lever as well as a quality one — and the reason it needs saying explicitly is the same reason Feature 15's language rule needed saying explicitly: a strong model default reasserts itself unless the counter-case is stated.
+- **An unpriced model reports $0.00 and warns at startup**, rather than being priced at a plausible guess. The point of showing cost is to notice when it moves, and an invented rate hides exactly that.
+- **`prompt_cache_key` is sent (the conversation id).** It is OpenAI's documented way to route a conversation's turns to the same cache; without it every InnerSun request in the world hashes to one route, which the documentation warns degrades above a modest request rate. Honestly: it made no measurable difference at one conversation at a time — a live run with it and a live run without it both reported zero. It is kept for the traffic rates this product is aiming at, and because it costs nothing.
+
+**What it costs.** A turn is about **$0.005**: one `gpt-4o` reply (~95% of it), one `gpt-4o-mini` match query, one embedding, and a `gpt-4o-mini` summarization on roughly one turn in five. Summarization is the only call this feature *adds*, and it pays for itself immediately — it replaces a prompt that would otherwise grow without bound with one that does not.
+
+**Not done here, on purpose:** rate limiting and abuse protection are Feature 20, not this feature's `max_tokens` caps; the semantic cache stays *Future*; and `messages.usage` is stored but not yet aggregated anywhere a researcher can see it, which is Feature 19's job.
 
 ## Feature 9: Safety / crisis detection 🟢 (must-have)
 Non-negotiable for a mental-health product.
@@ -291,6 +335,40 @@ Non-negotiable for a mental-health product.
 4. A clear, visible **"not a medical device / not emergency services"** disclaimer is present in the chat UI.
 5. Crisis triggers are logged (de-identified) for later evaluation.
 6. The **Feature 22 inspector shows how the signal was detected** for that turn — what fired, and that it took priority over Care-Pattern matching. Screening runs before retrieval and overrides it, so a turn where crisis handling took over is otherwise indistinguishable from one where nothing matched.
+
+## Feature 23: A working formulation that survives a turn 🟢
+Stop the match flapping at the relevance floor, and give every student a head start.
+**Depends on:** Feature 7. **Build after Feature 9** — crisis detection is non-negotiable and should not wait behind a matching refinement — and **before Feature 13**, which inherits the seeding design.
+
+Today every turn is matched from scratch and the applied patterns are discarded the moment the next message arrives. Measured consequence, from a real conversation: a student asked a follow-up *about* their homesickness and the pattern scored **0.5154** against a 0.54 floor. The guidance was dropped over **0.025**, on a turn where the subject had not changed at all. A fixed threshold flaps at its boundary, and a student does not experience their situation as ending because one sentence scored lower.
+
+**It is a formulation, not a profile.** It describes a *situation*, and situations change without the person changing — a student who moves from sleep to money is not a different student and has not been re-profiled. "Profile" invites treating it as an identity, and identity is the thing you defend rather than revise. This is a current best guess, held provisionally, expected to be wrong sometimes.
+
+**AC:**
+1. The patterns currently applied to a conversation are persisted, and survive a turn that dips below the entry floor.
+2. **The formulation is used at the gate, never in the query.** The match query and the embedding stay built from the student's own words alone.
+3. **Hysteresis:** a held pattern releases below `CARE_PATTERN_RELEASE_FLOOR`; a new one still needs `CARE_PATTERN_RELEVANCE_FLOOR` to enter. Both measured, not chosen.
+4. **Set semantics.** Each turn takes the union of the new matches and the unreleased held ones, sorts by *current* score, and truncates to `CARE_PATTERN_TOP_N`. The cap is never exceeded — a held pattern competes for the same slots rather than adding one.
+5. **Establishing** a formulation requires the full entry floor, and is evaluated for whether it should also require agreement across two turns.
+6. **The log records the measurement and the decision separately** — what the library said this turn as if no formulation existed, alongside what was acted on.
+7. Every conversation can be **seeded**, registered or not (see Feature 13).
+8. The Feature 22 inspector shows the held formulation and when it was established.
+
+**Why the formulation must not reach the query (AC 2).** Feature 7 already excludes our own replies from the match query, because replaying them would feed the guidance we injected back into the query that selects the guidance — *their words are evidence; ours are an echo*. Feeding the held match into the assessment that produces the next match is the same error, only stronger and faster: formulation shapes retrieval, retrieval shapes the reply, the reply shapes what the student says next, which confirms the formulation. The result is a system that is confidently self-consistent and increasingly detached from the student in front of it. So the scores are computed exactly as they are today; only what we *act on* changes.
+
+**Why entry and exit are asymmetric (AC 3, AC 5).** Hysteresis widens the exit, never the entrance. A pattern earns the right to be held — and to survive a dip — only by clearing the full floor cleanly; loosening both ends at once would let a pattern that never belonged linger for several turns. The two-turn question exists because **a first match is likeliest to be wrong exactly when the opening message was vague, which is when students are vaguest**. Note this does not change whether the first turn gets guidance: it does, as today. It changes only whether that pattern is yet *trusted* enough to survive a later dip. Using a pattern is cheap; trusting it should cost more.
+
+**Why the set can otherwise silently accumulate (AC 4).** Homesickness at turn 1, money at turn 5, sleep at turn 9 — with each releasing only at the lower floor, a conversation could end up carrying three patterns that were each relevant once, and a reply serving all three is worse counseling than one that leads with what matters now. The existing `CARE_PATTERN_TOP_N` cap does the work, provided **eviction uses current score, not held score**: a pattern still present only because of hysteresis is by definition scoring below the entry floor, so it is the first to go when something live wants in. Multi-pattern blending itself is not new — Feature 7 already applies every candidate above the floor and renders them "Closest match" then "Also relevant (2)".
+
+**Why the gap flag must not be polluted (AC 6).** Feature 19 AC 4 collects Care-Pattern gaps to decide which pattern the researcher writes next. A held pattern that keeps applying an approximate match would suppress those flags, and the holes in the knowledge base would stop being visible precisely because the system had learned to paper over them. Separating the measurement from the decision keeps the researcher's signal honest.
+
+**Seeding, for everyone (AC 7).** Feature 13 seeds a registrant's formulation from their questionnaire. Anonymous students get the same head start from a single tap on a conversation starter or a Feature 10 chip — one signal instead of 5–8 answers, no account, no added friction, which is the point of the tree hole. Same seeding path, different amount of evidence. A tap is lighter than a questionnaire but is the same *category* of data, so Feature 16's consent story covers it.
+
+**Both thresholds must be measured.** `npm run retrieval:calibrate` runs 18 labelled **single-turn** cases; a release threshold and a two-turn rule need **multi-turn** cases, which is real work and belongs in this feature rather than being assumed away. The last threshold this project chose by reasoning — ARCHITECTURE.md's "start around 0.7–0.8" — would have rejected every correct match, silently, with every reply still looking fine.
+
+**An open question worth measuring here, not guessing.** `CARE_PATTERN_TOP_N` is 3, chosen in Feature 7 without measuring *reply* quality against it — the calibration measured matching, not blending. Three simultaneous patterns may already be too many for one warm reply, and 2 may be the practical maximum. This feature has the multi-turn harness to find out.
+
+**Not done here, on purpose:** the questionnaire itself (Feature 13), the chips the anonymous seed is taken from (Feature 10), and re-ranking the vector top-N with an LLM, which remains the *Future* hybrid design.
 
 ## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
 Answer common questions with zero LLM cost.
@@ -328,13 +406,16 @@ The whole point of the funnel: convert trust into a booking.
 
 **Note:** this is *student* auth and is deliberately unrelated to the admin login that Feature 17 already shipped. Students are anonymous-first with optional registration; admins are a closed list of two or three people in their own `admin_users` table. Reconciling them is optional, not required — check what Feature 17 built before adding a second session mechanism.
 
-## Feature 13: Registration questionnaire → seeded initial match 🟢
-**Depends on:** Features 7, 12.
+## Feature 13: Questionnaire → seeded initial match 🟢
+**Depends on:** Features 7, 23. Feature 12 is needed only for the registered-user questionnaire, not for seeding itself.
 **AC:**
 1. New registrants get a **5–8 question**, warm, mostly multiple-choice questionnaire (skippable).
 2. Answers are stored on the user profile (treated as sensitive data; consent applies — see Feature 15).
 3. Answers **seed an initial top-N Care-Pattern match** before the user's first message.
-4. The running conversation still refines the match from that seed.
+4. **Anonymous students are seeded too**, from a single tap on a conversation starter or a Feature 10 chip — no account, no questionnaire, no added friction.
+5. The running conversation still refines the match from that seed, under Feature 23's rules.
+
+**Seeding is not registration-gated.** The questionnaire is one source of evidence, not the mechanism: what actually happens is that a conversation starts with a formulation instead of a blank one, and that is worth as much to an anonymous student as to a registered one. Putting 5–8 questions in front of an anonymous visitor would rebuild the barrier the "tree hole" exists to remove, so the anonymous path is one tap and the evidence is correspondingly thinner. A tap is lighter than a questionnaire but the same category of data, so Feature 16's consent story covers both.
 
 ## Feature 14: Memory for registered users 🟢
 **Depends on:** Features 7, 12.
@@ -450,7 +531,7 @@ Make it credible for investors and users.
 ## Feature 20: Hardening 🟢
 **Depends on:** all core features.
 **AC:**
-1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed).
+1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed). *(Partly in place already: `@fastify/rate-limit` is registered opt-in — global off — and applied to the credential-checking routes, the admin login and password change and the Feature 22 `GET /inspect` check, at 10 per 15 minutes. What remains is `POST /chat` itself, which is the expensive one and the reason `ENABLE_CHAT_ROUTES` is off on the hosted instance until this lands.)*
 2. Input validation and safe error handling across the API.
 3. Secrets managed via env/secret store; no secrets in code or client.
 4. Automated tests for the critical paths (matching, safety screening, auth).
