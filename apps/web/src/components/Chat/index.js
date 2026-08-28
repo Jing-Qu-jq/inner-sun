@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 import { MessageList } from 'react-chat-elements';
 import 'react-chat-elements/dist/main.css';
@@ -46,27 +46,38 @@ function Chat() {
     const [inspectorToken, setInspectorTokenState] = useState(() => getInspectorToken());
     const [compareReplies, setCompareReplies] = useState(false);
 
-    // Recomputed on every hash change rather than captured at mount. Reaching for the
-    // inspector mid-conversation means typing ?inspect=1 onto the page already open, which
-    // under HashRouter changes only the hash: the route re-renders but this component is
-    // never remounted, so a flag read once at mount would stay false until a hard reload.
-    const [hashChanges, setHashChanges] = useState(0);
+    // Whether the last turn came back with no `debug` despite a token being set. Unlocking the
+    // bar is purely local — the API is the only thing that checks the token, and by design it
+    // answers a wrong one with a byte-identical response rather than an error. Without this,
+    // a mistyped token or an API running without INSPECTOR_TOKEN looks exactly like a working
+    // inspector that has nothing to say, which is the one thing an observability panel must
+    // never do. It reveals nothing to a guesser: they can already see no panel appeared.
+    const [inspectorRejected, setInspectorRejected] = useState(false);
+
+    // Reaching for the inspector mid-conversation means typing ?inspect=1 onto the page
+    // already open, which under HashRouter changes only the hash: the route re-renders but
+    // this component is never remounted, so a flag read once at mount would stay false until
+    // a hard reload. This state is never read — it exists purely to force a re-render on
+    // hashchange, at which point the check below reads window.location again.
+    const [, setHashChanges] = useState(0);
     useEffect(() => {
         const bump = () => setHashChanges((n) => n + 1);
         window.addEventListener('hashchange', bump);
         return () => window.removeEventListener('hashchange', bump);
     }, []);
-    const inspectorVisible = useMemo(
-        () => inspectorRequested() || Boolean(inspectorToken),
-        // hashChanges is the dependency that matters; reading it keeps the memo honest.
-        [inspectorToken, hashChanges],
-    );
+    const inspectorVisible = inspectorRequested() || Boolean(inspectorToken);
 
     // The server owns the transcript (Feature 5): all this component keeps is
     // the id identifying it, held for the life of the page rather than in
     // storage — a reload starts a visibly empty chat, so silently resuming a
     // conversation whose messages are no longer on screen would be confusing.
     const conversationIdRef = useRef(null);
+
+    // The token as it stood when a turn was sent, for the check above.
+    const inspectorTokenRef = useRef(inspectorToken);
+    useEffect(() => {
+        inspectorTokenRef.current = inspectorToken;
+    }, [inspectorToken]);
 
     // Turns are sent one at a time. Two requests in flight against the same
     // conversation would interleave server-side as user-1, user-2, reply-2,
@@ -143,6 +154,10 @@ function Chat() {
                 // `debug` is undefined for everyone but an inspector, so it is stored
                 // unconditionally and simply has nothing to show in the ordinary case.
                 resolvePlaceholder(placeholderId, { text: reply, className: undefined, debug });
+                // Read from the ref rather than the captured value: the token can be unlocked
+                // while this turn is in flight, and judging a reply against a token that was
+                // not sent with it would report a rejection that never happened.
+                if (inspectorTokenRef.current) setInspectorRejected(!debug);
             } catch (error) {
                 // The key rather than the text: the message is translated at
                 // render time, so it follows the language toggle like the rest
@@ -198,7 +213,12 @@ function Chat() {
             {inspectorVisible && (
                 <InspectorBar
                     token={inspectorToken}
-                    onTokenChange={setInspectorTokenState}
+                    onTokenChange={(value) => {
+                        // A new token deserves a clean verdict rather than the old one.
+                        setInspectorRejected(false);
+                        setInspectorTokenState(value);
+                    }}
+                    rejected={inspectorRejected}
                     compare={compareReplies}
                     onCompareChange={setCompareReplies}
                 />
