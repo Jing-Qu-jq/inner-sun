@@ -73,6 +73,36 @@ export function clearInspectorToken() {
     }
 }
 
+/**
+ * Ask the API whether a token works, before anything is unlocked (Feature 22, amended).
+ *
+ * Unlocking used to be purely local, so a wrong token gave you the bar, the compare switch and
+ * no panel — indistinguishable from a working inspector with nothing to report. The API is the
+ * only thing that can answer this, so the unlock button asks it.
+ *
+ * Returns a machine-readable outcome rather than a sentence, for the same reason chat errors do:
+ * the component picks the wording at render time, so the message follows the language toggle.
+ */
+export async function checkInspectorToken(token) {
+    let response;
+    try {
+        response = await fetch(`${API_BASE_URL}/inspect`, {
+            method: 'GET',
+            headers: { 'X-InnerSun-Inspect': token },
+        });
+    } catch {
+        return 'unreachable';
+    }
+
+    if (response.status === 204) return 'ok';
+    if (response.status === 401) return 'invalid';
+    // 404 is the API saying the inspector does not exist here — INSPECTOR_TOKEN is unset, and an
+    // unknown route answers the same way, which is what keeps that property true.
+    if (response.status === 404) return 'not_configured';
+    if (response.status === 429) return 'rate_limited';
+    return 'unreachable';
+}
+
 async function postChat({ message, conversationId, locale, compare }) {
     // Sent only when a token exists, so an ordinary turn is the same request it always was.
     const token = getInspectorToken();

@@ -8,7 +8,7 @@ import InputGroup from 'react-bootstrap/InputGroup';
 import Table from 'react-bootstrap/Table';
 
 import { useI18n } from '../../i18n';
-import { clearInspectorToken, setInspectorToken } from '../../fetchers/ConversationFetcher';
+import { checkInspectorToken, clearInspectorToken, setInspectorToken } from '../../fetchers/ConversationFetcher';
 
 /**
  * The retrieval inspector (Feature 22).
@@ -49,10 +49,24 @@ export function inspectorRequested() {
 export function InspectorBar({ token, onTokenChange, rejected, compare, onCompareChange }) {
     const { t } = useI18n();
     const [draft, setDraft] = useState('');
+    // The API's verdict on the token just submitted: '', 'checking', or a failure code.
+    const [status, setStatus] = useState('');
 
-    const unlock = () => {
+    // Checked against the API before anything is stored. Unlocking is otherwise purely local,
+    // and the browser has no way to know whether a token is right — so a mistyped one used to
+    // buy the bar, the compare switch, and a silent absence of panels.
+    const unlock = async () => {
         const value = draft.trim();
         if (!value) return;
+
+        setStatus('checking');
+        const outcome = await checkInspectorToken(value);
+        if (outcome !== 'ok') {
+            setStatus(outcome);
+            return;
+        }
+
+        setStatus('');
         setInspectorToken(value);
         onTokenChange(value);
         setDraft('');
@@ -85,7 +99,10 @@ export function InspectorBar({ token, onTokenChange, rejected, compare, onCompar
                             type="password"
                             value={draft}
                             placeholder={t('inspector.tokenLabel')}
-                            onChange={(e) => setDraft(e.target.value)}
+                            onChange={(e) => {
+                                setDraft(e.target.value);
+                                if (status) setStatus('');
+                            }}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                     e.preventDefault();
@@ -93,11 +110,15 @@ export function InspectorBar({ token, onTokenChange, rejected, compare, onCompar
                                 }
                             }}
                         />
-                        <Button variant="secondary" onClick={unlock}>
-                            {t('inspector.unlock')}
+                        <Button variant="secondary" onClick={unlock} disabled={status === 'checking'}>
+                            {t(status === 'checking' ? 'inspector.checking' : 'inspector.unlock')}
                         </Button>
                     </InputGroup>
-                    <div className="text-secondary mt-1">{t('inspector.tokenHint')}</div>
+                    {status && status !== 'checking' ? (
+                        <div className="text-danger mt-1">{t(`inspector.unlock.${status}`)}</div>
+                    ) : (
+                        <div className="text-secondary mt-1">{t('inspector.tokenHint')}</div>
+                    )}
                 </>
             )}
 

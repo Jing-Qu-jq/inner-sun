@@ -2,6 +2,7 @@ import { act, render, screen, fireEvent, waitFor, within } from '@testing-librar
 import Chat from './index';
 import ConversationFetcher, {
     ChatRequestError,
+    checkInspectorToken,
     clearInspectorToken,
     setInspectorToken,
 } from '../../fetchers/ConversationFetcher';
@@ -28,11 +29,15 @@ jest.mock('../../fetchers/ConversationFetcher', () => ({
     __esModule: true,
     ...jest.requireActual('../../fetchers/ConversationFetcher'),
     default: jest.fn(),
+    // The API is the only thing that can judge a token, so the unlock path is a network
+    // call too — mocked here so each test states the verdict it is exercising.
+    checkInspectorToken: jest.fn(),
 }));
 
 let pending;
 beforeEach(() => {
     pending = [];
+    checkInspectorToken.mockResolvedValue('ok');
     ConversationFetcher.mockImplementation(
         (args) =>
             new Promise((resolve, reject) => {
@@ -200,6 +205,42 @@ test('with a token, a reply shows its matched pattern and score', async () => {
         expect(screen.getByText(/Matched: Homesickness & cultural adjustment · 0\.6716/)).toBeInTheDocument();
     });
     clearInspectorToken();
+});
+
+// The API is the only thing that knows whether a token is right, so Unlock asks it before
+// storing anything. Without this, a mistyped token bought the bar, the compare switch, and a
+// silent absence of panels — which reads as "the inspector found nothing".
+test('a token the API rejects is refused at unlock, and nothing is stored', async () => {
+    checkInspectorToken.mockResolvedValue('invalid');
+    window.location.hash = '#/chatPage?inspect=1';
+    render(<Chat />);
+
+    fireEvent.change(screen.getByPlaceholderText('Inspector token'), {
+        target: { value: 'definitely-wrong' },
+    });
+    fireEvent.click(screen.getByText('Unlock'));
+
+    await waitFor(() => {
+        expect(screen.getByText(/was not accepted by the API/i)).toBeInTheDocument();
+    });
+    // Still locked, and the compare switch never appeared.
+    expect(screen.getByPlaceholderText('Inspector token')).toBeInTheDocument();
+    expect(screen.queryByText(/Also answer without/i)).not.toBeInTheDocument();
+    window.location.hash = '';
+});
+
+test('an API with no INSPECTOR_TOKEN set says so, rather than blaming the token', async () => {
+    checkInspectorToken.mockResolvedValue('not_configured');
+    window.location.hash = '#/chatPage?inspect=1';
+    render(<Chat />);
+
+    fireEvent.change(screen.getByPlaceholderText('Inspector token'), { target: { value: 'anything' } });
+    fireEvent.click(screen.getByText('Unlock'));
+
+    await waitFor(() => {
+        expect(screen.getByText(/without INSPECTOR_TOKEN set/i)).toBeInTheDocument();
+    });
+    window.location.hash = '';
 });
 
 // --- Prompt assembly and cost (Feature 8) ----------------------------------------------

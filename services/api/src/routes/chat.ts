@@ -161,6 +161,42 @@ const chatResponseSchema = {
 } as const;
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * GET /inspect — does this token work? (Feature 22, amended.)
+   *
+   * The inspector is checked on POST /chat and nowhere else, so unlocking the bar in the browser
+   * used to prove nothing: a wrong token produced an ordinary reply and an empty panel, which is
+   * indistinguishable from a working inspector that had nothing to say. This gives the unlock
+   * button something to ask.
+   *
+   * The three answers are deliberately distinct, because they need different fixes:
+   *
+   *   204  the token works.
+   *   401  the token does not match this instance.
+   *   404  INSPECTOR_TOKEN is unset here, so the inspector does not exist — the same answer an
+   *        unknown route gives, which is what keeps "unset means the feature does not exist"
+   *        true for this endpoint as well as for the debug payload.
+   *
+   * It is not a new oracle. Anyone could already probe a token by sending chat messages; the only
+   * thing that changes is that probing now costs *us* nothing instead of an OpenAI call per guess.
+   * Rate limited on the same budget as the admin login, for the same reason.
+   */
+  app.get(
+    "/inspect",
+    { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    async (request, reply) => {
+      if (!config.inspectorToken) {
+        return reply.status(404).send({ error: { code: "not_found", message: "Route not found." } });
+      }
+      if (!isInspector(request)) {
+        return reply.status(401).send({
+          error: { code: "inspector_token_invalid", message: "That token was not accepted." },
+        });
+      }
+      return reply.status(204).send();
+    },
+  );
+
   app.post<{ Body: ChatRequest; Reply: ChatResponse }>(
     "/chat",
     { schema: { body: chatBodySchema, response: { 200: chatResponseSchema } } },
