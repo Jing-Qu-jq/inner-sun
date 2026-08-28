@@ -38,7 +38,7 @@ function optional(name: string, fallback: string): string {
  * .env otherwise sails past a presence check and fails much later as an opaque
  * 401 from OpenAI.
  */
-const PLACEHOLDER_VALUES = new Set(["sk-your-openai-key-here"]);
+const PLACEHOLDER_VALUES = new Set(["sk-your-openai-key-here", "choose-a-long-random-string"]);
 
 function secret(name: string): string | undefined {
   const value = process.env[name];
@@ -109,6 +109,16 @@ export const config = {
     /** Give up on a slow upstream rather than holding the request open. */
     timeoutMs: Number(optional("OPENAI_TIMEOUT_MS", "30000")),
   },
+
+  /**
+   * Unlocks the retrieval inspector on the chat page (Feature 22).
+   *
+   * Unset means the inspector does not exist: no debug payload is built and a response is
+   * byte-identical to an ordinary visitor's. Read through secret() so the .env.example
+   * placeholder counts as unset — a copied-but-unedited .env must not hand out a live
+   * credential. It grants visibility only; it cannot author, publish or retire a pattern.
+   */
+  inspectorToken: secret("INSPECTOR_TOKEN"),
 
   /**
    * Care Pattern retrieval — the RAG knobs (Feature 7).

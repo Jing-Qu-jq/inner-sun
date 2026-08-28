@@ -3,6 +3,7 @@ import {
   DEFAULT_LOCALE,
   LOCALES,
   MAX_MESSAGE_LENGTH,
+  type ChatDebug,
   type ChatMessage,
   type ChatRequest,
   type ChatResponse,
@@ -21,7 +22,8 @@ import {
 import { AppError } from "../errors.js";
 import { createChatCompletion } from "../openai.js";
 import { buildSystemPrompt } from "../prompt.js";
-import { formatCarePatternGuidance, retrieveCarePatterns } from "../retrieval.js";
+import { isInspector, wantsComparison } from "../inspector.js";
+import { formatCarePatternGuidance, retrieveCarePatterns, type RetrievalResult } from "../retrieval.js";
 
 /**
  * POST /chat — the orchestrator endpoint (Features 4 and 5).
@@ -56,6 +58,54 @@ const chatBodySchema = {
  * field we never declared cannot leak out of the endpoint even if some future
  * handler puts one on the object.
  */
+const usageSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    promptTokens: { type: "number" },
+    completionTokens: { type: "number" },
+    totalTokens: { type: "number" },
+  },
+} as const;
+
+/**
+ * Retrieval internals, returned only to a privileged viewer (Feature 22).
+ *
+ * Declared here because Fastify serializes strictly against this schema — which is the
+ * property that keeps the field from leaking. An undeclared `debug` could not be returned
+ * at all, and a declared-but-absent one is simply not serialized, so an ordinary visitor's
+ * response is byte-identical whether or not the inspector exists on this instance.
+ */
+const chatDebugSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    outcome: { type: "string" },
+    gap: { type: "boolean" },
+    floor: { type: "number" },
+    matchQuery: { type: "string" },
+    candidates: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          score: { type: "number" },
+          applied: { type: "boolean" },
+        },
+      },
+    },
+    guidance: { type: "string" },
+    retrievalMs: { type: "number" },
+    usage: usageSchema,
+    model: { type: "string" },
+    replyWithoutGuidance: { type: "string" },
+    usageWithoutGuidance: usageSchema,
+  },
+} as const;
+
 const chatResponseSchema = {
   type: "object",
   required: ["conversationId", "reply", "locale"],
@@ -64,6 +114,7 @@ const chatResponseSchema = {
     conversationId: { type: "string" },
     reply: { type: "string" },
     locale: { type: "string", enum: [...LOCALES] },
+    debug: chatDebugSchema,
   },
 } as const;
 
@@ -101,15 +152,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         summary: conversation.summary,
       });
 
+      const guidance = formatCarePatternGuidance(match.applied, conversation.locale);
+      const turn = [...history, userMessage].map(
+        (m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam,
+      );
+
       const messages: ChatCompletionMessageParam[] = [
-        {
-          role: "system",
-          content: buildSystemPrompt({
-            locale: conversation.locale,
-            carePatternStrategies: formatCarePatternGuidance(match.applied, conversation.locale),
-          }),
-        },
-        ...[...history, userMessage].map((m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
+        { role: "system", content: buildSystemPrompt({ locale: conversation.locale, carePatternStrategies: guidance }) },
+        ...turn,
       ];
 
       // Pattern titles are researcher-authored, never student words, so they are safe to
@@ -129,8 +179,28 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         "care pattern match",
       );
 
+      // The inspector (Feature 22). `inspect` gates the payload; `compare` additionally asks
+      // for the same turn answered with the guidance withheld, so the two can be shown side
+      // by side. The comparison is skipped when no guidance was applied — with nothing to
+      // withhold, two replies would differ only by sampling noise and demonstrate nothing.
+      const inspect = isInspector(request);
+      const compare = inspect && wantsComparison(request) && guidance !== "";
+
       const started = Date.now();
-      const completion = await createChatCompletion({ messages, model: config.openai.replyModel });
+      const [completion, unguided] = await Promise.all([
+        createChatCompletion({ messages, model: config.openai.replyModel }),
+        // In parallel: it is a second call on the same turn, and running it after the first
+        // would make an inspected turn twice as slow as the one being demonstrated.
+        compare
+          ? createChatCompletion({
+              messages: [
+                { role: "system", content: buildSystemPrompt({ locale: conversation.locale }) },
+                ...turn,
+              ],
+              model: config.openai.replyModel,
+            })
+          : Promise.resolve(undefined),
+      ]);
 
       // Structured, message-content-free: this is a mental-health product, so
       // the log records the shape of the exchange, never what was said.
@@ -147,11 +217,56 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         "chat completion",
       );
 
+      // Only the real reply is recorded. The comparison reply was never shown to a student
+      // and must not become part of the transcript that later features summarize, analyze
+      // and export.
       await appendMessage(conversation.id, { role: "assistant", content: completion.reply });
 
-      return { conversationId: conversation.id, reply: completion.reply, locale: conversation.locale };
+      const response: ChatResponse = {
+        conversationId: conversation.id,
+        reply: completion.reply,
+        locale: conversation.locale,
+      };
+      if (inspect) {
+        response.debug = buildDebug(match, guidance, completion, unguided);
+      }
+      return response;
     },
   );
+}
+
+/**
+ * Assemble what the inspector shows (Feature 22).
+ *
+ * Nothing here is computed for the occasion — every field is a fact the turn already
+ * produced. That is deliberate: an inspector that changed how a turn ran would be showing
+ * a different turn than the one the student got.
+ */
+function buildDebug(
+  match: RetrievalResult,
+  guidance: string,
+  completion: Awaited<ReturnType<typeof createChatCompletion>>,
+  unguided: Awaited<ReturnType<typeof createChatCompletion>> | undefined,
+): ChatDebug {
+  const appliedIds = new Set(match.applied.map((m) => m.id));
+
+  return {
+    outcome: match.outcome,
+    gap: match.gap,
+    floor: config.retrieval.relevanceFloor,
+    ...(match.query ? { matchQuery: match.query } : {}),
+    candidates: match.candidates.map((c) => ({
+      id: c.id,
+      title: c.title,
+      score: Number(c.similarity.toFixed(4)),
+      applied: appliedIds.has(c.id),
+    })),
+    guidance,
+    retrievalMs: match.durationMs,
+    usage: completion.usage,
+    model: completion.model,
+    ...(unguided ? { replyWithoutGuidance: unguided.reply, usageWithoutGuidance: unguided.usage } : {}),
+  };
 }
 
 /**
