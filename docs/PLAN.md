@@ -9,7 +9,7 @@
 - **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, and Feature 22 was added and built straight after Feature 7; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, and Feature 23 was added mid-Phase-1 and sits between Features 9 and 10 where it will be built; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
 ### The one exception to localhost-only (2026-08-15)
 A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
@@ -315,6 +315,7 @@ What is left is volume. Caching engaged reliably only against a prefix that had 
 - **An empty summary is refused rather than stored.** Storing one would move the boundary past messages that nothing now describes — the only way this design can actually lose part of a conversation.
 - **Summarization degrades, it never fails a turn.** A failed summarize leaves the boundary where it was and the turn proceeds on the verbatim window alone, which is exactly what every turn did before this feature.
 - **Cost is stored on the message, not only logged.** `messages.usage` is one `jsonb` column, so the unit cost this feature exists to watch is a single query rather than a reconstruction from logs, and Feature 19 inherits it. The comparison reply the inspector can request is counted too — the switch warns that it doubles the cost of a turn, and a figure that quietly excluded it would make that warning look untrue.
+- **The cheapest output token is the one not generated.** `max_tokens` caps the worst case; it does nothing about a model that answers "good morning" in a hundred words, which `gpt-4o` will happily do. The static prompt now tells it to match length to the moment: two to five sentences by default, one or two for a greeting, room when a student discloses something painful, one concrete suggestion rather than a menu, and never a numbered list unless asked. Measured before and after on the same four messages, completion tokens fell from a 122–219 band to **9–71**, while a heavy first disclosure still drew 140 tokens across three short paragraphs. Output is billed at four times input on `gpt-4o`, so this is a real cost lever as well as a quality one — and the reason it needs saying explicitly is the same reason Feature 15's language rule needed saying explicitly: a strong model default reasserts itself unless the counter-case is stated.
 - **An unpriced model reports $0.00 and warns at startup**, rather than being priced at a plausible guess. The point of showing cost is to notice when it moves, and an invented rate hides exactly that.
 - **`prompt_cache_key` is sent (the conversation id).** It is OpenAI's documented way to route a conversation's turns to the same cache; without it every InnerSun request in the world hashes to one route, which the documentation warns degrades above a modest request rate. Honestly: it made no measurable difference at one conversation at a time — a live run with it and a live run without it both reported zero. It is kept for the traffic rates this product is aiming at, and because it costs nothing.
 
@@ -332,6 +333,40 @@ Non-negotiable for a mental-health product.
 4. A clear, visible **"not a medical device / not emergency services"** disclaimer is present in the chat UI.
 5. Crisis triggers are logged (de-identified) for later evaluation.
 6. The **Feature 22 inspector shows how the signal was detected** for that turn — what fired, and that it took priority over Care-Pattern matching. Screening runs before retrieval and overrides it, so a turn where crisis handling took over is otherwise indistinguishable from one where nothing matched.
+
+## Feature 23: A working formulation that survives a turn 🟢
+Stop the match flapping at the relevance floor, and give every student a head start.
+**Depends on:** Feature 7. **Build after Feature 9** — crisis detection is non-negotiable and should not wait behind a matching refinement — and **before Feature 13**, which inherits the seeding design.
+
+Today every turn is matched from scratch and the applied patterns are discarded the moment the next message arrives. Measured consequence, from a real conversation: a student asked a follow-up *about* their homesickness and the pattern scored **0.5154** against a 0.54 floor. The guidance was dropped over **0.025**, on a turn where the subject had not changed at all. A fixed threshold flaps at its boundary, and a student does not experience their situation as ending because one sentence scored lower.
+
+**It is a formulation, not a profile.** It describes a *situation*, and situations change without the person changing — a student who moves from sleep to money is not a different student and has not been re-profiled. "Profile" invites treating it as an identity, and identity is the thing you defend rather than revise. This is a current best guess, held provisionally, expected to be wrong sometimes.
+
+**AC:**
+1. The patterns currently applied to a conversation are persisted, and survive a turn that dips below the entry floor.
+2. **The formulation is used at the gate, never in the query.** The match query and the embedding stay built from the student's own words alone.
+3. **Hysteresis:** a held pattern releases below `CARE_PATTERN_RELEASE_FLOOR`; a new one still needs `CARE_PATTERN_RELEVANCE_FLOOR` to enter. Both measured, not chosen.
+4. **Set semantics.** Each turn takes the union of the new matches and the unreleased held ones, sorts by *current* score, and truncates to `CARE_PATTERN_TOP_N`. The cap is never exceeded — a held pattern competes for the same slots rather than adding one.
+5. **Establishing** a formulation requires the full entry floor, and is evaluated for whether it should also require agreement across two turns.
+6. **The log records the measurement and the decision separately** — what the library said this turn as if no formulation existed, alongside what was acted on.
+7. Every conversation can be **seeded**, registered or not (see Feature 13).
+8. The Feature 22 inspector shows the held formulation and when it was established.
+
+**Why the formulation must not reach the query (AC 2).** Feature 7 already excludes our own replies from the match query, because replaying them would feed the guidance we injected back into the query that selects the guidance — *their words are evidence; ours are an echo*. Feeding the held match into the assessment that produces the next match is the same error, only stronger and faster: formulation shapes retrieval, retrieval shapes the reply, the reply shapes what the student says next, which confirms the formulation. The result is a system that is confidently self-consistent and increasingly detached from the student in front of it. So the scores are computed exactly as they are today; only what we *act on* changes.
+
+**Why entry and exit are asymmetric (AC 3, AC 5).** Hysteresis widens the exit, never the entrance. A pattern earns the right to be held — and to survive a dip — only by clearing the full floor cleanly; loosening both ends at once would let a pattern that never belonged linger for several turns. The two-turn question exists because **a first match is likeliest to be wrong exactly when the opening message was vague, which is when students are vaguest**. Note this does not change whether the first turn gets guidance: it does, as today. It changes only whether that pattern is yet *trusted* enough to survive a later dip. Using a pattern is cheap; trusting it should cost more.
+
+**Why the set can otherwise silently accumulate (AC 4).** Homesickness at turn 1, money at turn 5, sleep at turn 9 — with each releasing only at the lower floor, a conversation could end up carrying three patterns that were each relevant once, and a reply serving all three is worse counseling than one that leads with what matters now. The existing `CARE_PATTERN_TOP_N` cap does the work, provided **eviction uses current score, not held score**: a pattern still present only because of hysteresis is by definition scoring below the entry floor, so it is the first to go when something live wants in. Multi-pattern blending itself is not new — Feature 7 already applies every candidate above the floor and renders them "Closest match" then "Also relevant (2)".
+
+**Why the gap flag must not be polluted (AC 6).** Feature 19 AC 4 collects Care-Pattern gaps to decide which pattern the researcher writes next. A held pattern that keeps applying an approximate match would suppress those flags, and the holes in the knowledge base would stop being visible precisely because the system had learned to paper over them. Separating the measurement from the decision keeps the researcher's signal honest.
+
+**Seeding, for everyone (AC 7).** Feature 13 seeds a registrant's formulation from their questionnaire. Anonymous students get the same head start from a single tap on a conversation starter or a Feature 10 chip — one signal instead of 5–8 answers, no account, no added friction, which is the point of the tree hole. Same seeding path, different amount of evidence. A tap is lighter than a questionnaire but is the same *category* of data, so Feature 16's consent story covers it.
+
+**Both thresholds must be measured.** `npm run retrieval:calibrate` runs 18 labelled **single-turn** cases; a release threshold and a two-turn rule need **multi-turn** cases, which is real work and belongs in this feature rather than being assumed away. The last threshold this project chose by reasoning — ARCHITECTURE.md's "start around 0.7–0.8" — would have rejected every correct match, silently, with every reply still looking fine.
+
+**An open question worth measuring here, not guessing.** `CARE_PATTERN_TOP_N` is 3, chosen in Feature 7 without measuring *reply* quality against it — the calibration measured matching, not blending. Three simultaneous patterns may already be too many for one warm reply, and 2 may be the practical maximum. This feature has the multi-turn harness to find out.
+
+**Not done here, on purpose:** the questionnaire itself (Feature 13), the chips the anonymous seed is taken from (Feature 10), and re-ranking the vector top-N with an LLM, which remains the *Future* hybrid design.
 
 ## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
 Answer common questions with zero LLM cost.
@@ -369,13 +404,16 @@ The whole point of the funnel: convert trust into a booking.
 
 **Note:** this is *student* auth and is deliberately unrelated to the admin login that Feature 17 already shipped. Students are anonymous-first with optional registration; admins are a closed list of two or three people in their own `admin_users` table. Reconciling them is optional, not required — check what Feature 17 built before adding a second session mechanism.
 
-## Feature 13: Registration questionnaire → seeded initial match 🟢
-**Depends on:** Features 7, 12.
+## Feature 13: Questionnaire → seeded initial match 🟢
+**Depends on:** Features 7, 23. Feature 12 is needed only for the registered-user questionnaire, not for seeding itself.
 **AC:**
 1. New registrants get a **5–8 question**, warm, mostly multiple-choice questionnaire (skippable).
 2. Answers are stored on the user profile (treated as sensitive data; consent applies — see Feature 15).
 3. Answers **seed an initial top-N Care-Pattern match** before the user's first message.
-4. The running conversation still refines the match from that seed.
+4. **Anonymous students are seeded too**, from a single tap on a conversation starter or a Feature 10 chip — no account, no questionnaire, no added friction.
+5. The running conversation still refines the match from that seed, under Feature 23's rules.
+
+**Seeding is not registration-gated.** The questionnaire is one source of evidence, not the mechanism: what actually happens is that a conversation starts with a formulation instead of a blank one, and that is worth as much to an anonymous student as to a registered one. Putting 5–8 questions in front of an anonymous visitor would rebuild the barrier the "tree hole" exists to remove, so the anonymous path is one tap and the evidence is correspondingly thinner. A tap is lighter than a questionnaire but the same category of data, so Feature 16's consent story covers both.
 
 ## Feature 14: Memory for registered users 🟢
 **Depends on:** Features 7, 12.
