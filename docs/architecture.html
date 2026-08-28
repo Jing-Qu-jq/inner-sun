@@ -372,10 +372,12 @@ flowchart LR
     rather than resent, and what the turn and the conversation have cost) behind a
     <b>visibility-only credential</b> that is off unless deliberately switched on. It is deliberately not the
     researcher tool's admin session, which can publish and retire clinical guidance.</p>
-  <p>The panel says so when the credential is rejected. Unlocking it is client-side, and a wrong credential is
-    answered with a response identical to an ordinary visitor&rsquo;s &mdash; so without that message &ldquo;the
-    inspector is switched off&rdquo; and &ldquo;the inspector found nothing&rdquo; look the same on screen, which is
-    the one thing an observability surface must never do. See PLAN.md Feature 22.</p>
+  <p><b>The credential is checked when it is entered</b>, and the answer distinguishes the two failures that need
+    different fixes &mdash; a token this instance does not accept, versus an instance with the inspector switched off
+    entirely. Unlocking is otherwise client-side, and a wrong credential is answered with a response identical to an
+    ordinary visitor&rsquo;s, so without that check &ldquo;the inspector is off&rdquo; and &ldquo;the inspector found
+    nothing&rdquo; look the same on screen, which is the one thing an observability surface must never do.
+    See PLAN.md Feature 22.</p>
 
   <h3>Language: English knowledge base, replies in the user's language</h3>
   <ul>
@@ -427,6 +429,7 @@ flowchart LR
       <tr><td><b>History summarization</b></td><td><span class="pill v1">v1</span></td><td>Older messages are folded into a running summary instead of being resent, so the prompt stops growing while the conversation stays whole.</td></tr>
       <tr><td><b>Prompt caching</b></td><td><span class="pill v1">v1</span></td><td>OpenAI bills a prompt prefix it has seen before at half price. Nothing to switch on &mdash; what it needs is <b>ordering</b>, below.</td></tr>
       <tr><td><b>Token caps + rate limiting</b></td><td><span class="pill v1">v1</span></td><td>Every call carries a <code>max_tokens</code>. Abuse protection so free usage can't be farmed is Feature 20.</td></tr>
+      <tr><td><b>Reply length</b></td><td><span class="pill v1">v1</span></td><td>The prompt matches reply length to the moment instead of defaulting to long. Measured: completion tokens fell from a 122&ndash;219 band to <b>9&ndash;71</b> on the same messages.</td></tr>
       <tr><td><b>Semantic cache</b></td><td><span class="pill future">Future</span></td><td>Skip the model call for repeated <em>FAQ</em>. Deferred — barely helps counseling. <b>Never</b> cache a personalized emotional reply.</td></tr>
     </tbody>
   </table>
@@ -452,6 +455,14 @@ flowchart LR
   <b>nothing would ever be cached</b>. Instead the whole <em>unsummarized tail</em> is replayed; it grows only
   by appending, and a summarization takes it straight back down. Measured on the real prompt shape:
   <b>1,536 of 1,754 prompt tokens served from cache</b>, about 88%.</p>
+
+  <p><b>Output is the expensive half.</b> On <code>gpt-4o</code> a completion token costs four times a prompt token,
+    so the length of a reply is a bigger lever than most prompt-side savings &mdash; and it is the one a model will
+    quietly work against. <code>max_tokens</code> caps the worst case and does nothing about a model that answers
+    &ldquo;good morning&rdquo; in a hundred words, which is the default behaviour. Saying so explicitly in the static
+    prompt &mdash; two to five sentences by default, room when a student discloses something painful, one concrete
+    suggestion rather than a menu &mdash; cut completion tokens by roughly two thirds while a heavy first disclosure
+    still drew a full three paragraphs. It cuts padding, not care.</p>
 
   <h3>What a turn costs, and how that is known</h3>
   <p>Every upstream call a turn makes is recorded with its model and token counts, priced from a list in

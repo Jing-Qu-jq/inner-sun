@@ -235,7 +235,7 @@ Feature 7 made the reply Care-Pattern-grounded, but everything that decides it �
 **Deliberately NOT the Feature 17 admin tool.** That tool is for researchers authoring patterns, and it is a separate app. This is an inspector on the student-facing chat page: same conversation, same replies a visitor gets, with a panel that opens underneath them.
 
 **AC (all met — verified against a live API, live database and live OpenAI in a real browser, 2026-08-23):**
-1. ✅ `?inspect=1` reveals the unlock bar; the token then rides on the `X-InnerSun-Inspect` header. An ordinary visitor's response carries the same three keys it always did (`conversationId`, `reply`, `locale`) — verified with no header and with a wrong token — and a visitor's page contains no inspector markup at all (checked in the DOM after a real turn: `.inspector-panel` count 0, no matching text anywhere). ✅ **Amended 2026-08-27:** a rejected token now says so (see below); it did not, and the silence cost real time.
+1. ✅ `?inspect=1` reveals the unlock bar; the token then rides on the `X-InnerSun-Inspect` header. An ordinary visitor's response carries the same three keys it always did (`conversationId`, `reply`, `locale`) — verified with no header and with a wrong token — and a visitor's page contains no inspector markup at all (checked in the DOM after a real turn: `.inspector-panel` count 0, no matching text anywhere). ✅ **Amended 2026-08-27:** the token is now checked at unlock via `GET /inspect`, and a rejection says which of the two failures it is (see below). It said nothing at all before, and the silence cost real time twice.
 2. ✅ Each inspected reply shows a badge — *"Matched: Sleep disruption & living across time zones · 0.7525"* — over a panel carrying `outcome: applied`, the floor in force (0.54), the English match query, and every candidate with its score and whether it was applied (0.7525 ✓, 0.5010, 0.4875).
 3. ✅ The injected block is shown verbatim, strategies, "do not" items and escalation note included — so what the model was told is inspectable, not inferred.
 4. ✅ A switch adds a second reply with the guidance withheld, rendered beside the real one. Off by default, and **skipped entirely when nothing was applied** — with nothing to withhold, two replies would differ only by sampling noise, so the second `gpt-4o` call is not made.
@@ -531,7 +531,7 @@ Make it credible for investors and users.
 ## Feature 20: Hardening 🟢
 **Depends on:** all core features.
 **AC:**
-1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed).
+1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed). *(Partly in place already: `@fastify/rate-limit` is registered opt-in — global off — and applied to the credential-checking routes, the admin login and password change and the Feature 22 `GET /inspect` check, at 10 per 15 minutes. What remains is `POST /chat` itself, which is the expensive one and the reason `ENABLE_CHAT_ROUTES` is off on the hosted instance until this lands.)*
 2. Input validation and safe error handling across the API.
 3. Secrets managed via env/secret store; no secrets in code or client.
 4. Automated tests for the critical paths (matching, safety screening, auth).

@@ -300,10 +300,12 @@ long conversation was summarized rather than resent, and what the turn and the c
 cost) behind a **visibility-only credential** that is off unless deliberately switched on. It is
 deliberately not the researcher tool's admin session, which can publish and retire clinical guidance.
 
-The panel says so when the credential is rejected. Unlocking it is client-side, and a wrong
-credential is answered with a response identical to an ordinary visitor's — so without that message
-"the inspector is switched off" and "the inspector found nothing" look the same on screen, which is
-the one thing an observability surface must never do. See PLAN.md Feature 22.
+**The credential is checked when it is entered, and the answer distinguishes the two failures that
+need different fixes** — a token this instance does not accept, versus an instance with the
+inspector switched off entirely. Unlocking is otherwise client-side, and a wrong credential is
+answered with a response identical to an ordinary visitor's, so without that check "the inspector is
+off" and "the inspector found nothing" look the same on screen, which is the one thing an
+observability surface must never do. See PLAN.md Feature 22.
 
 ### Language: English knowledge base, replies in the user's language
 
@@ -366,6 +368,7 @@ At ~$0.05 per conversation, unit cost is what matters as we scale. Levers, in or
 | **History summarization** | ✅ v1 | Older messages are folded into a running summary instead of being resent, so the prompt stops growing while the conversation stays whole. |
 | **Prompt caching** | ✅ v1 | OpenAI bills a prompt prefix it has seen before at half price. Nothing to switch on — what it needs is **ordering**, below. |
 | **Token caps + rate limiting** | ✅ v1 | Every call carries a `max_tokens`. Abuse protection so free anonymous usage can't be farmed is Feature 20. |
+| **Reply length** | ✅ v1 | The prompt matches reply length to the moment instead of defaulting to long. Measured: completion tokens fell from a 122–219 band to **9–71** on the same messages. |
 | **Semantic cache** | 🔵 Future | Skip the model call for repeated *FAQ* questions. Deferred: needs a vector-match service, and it barely helps counseling (real venting is personal, not repeated). **Never** cache a personalized emotional reply. |
 
 > Reference: at 5 users × 1 conversation/day, a week costs ≈ **$1.8 with these optimizations vs ≈ $2.6
@@ -396,6 +399,14 @@ prefix changes immediately after the static prompt — which on its own is ~840 
 minimum, so **nothing would ever be cached**. Instead the whole *unsummarized tail* is replayed;
 it only ever grows by appending, and a summarization takes it straight back down. Measured on
 the real prompt shape: **1,536 of 1,754 prompt tokens served from cache**, about 88%.
+
+**Output is the expensive half.** On `gpt-4o` a completion token costs four times a prompt token, so
+the length of a reply is a bigger lever than most prompt-side savings — and it is the one a model
+will quietly work against. `max_tokens` caps the worst case and does nothing about a model that
+answers "good morning" in a hundred words, which is the default behaviour. Saying so explicitly in
+the static prompt — two to five sentences by default, room when a student discloses something
+painful, one concrete suggestion rather than a menu — cut completion tokens by roughly two thirds
+while a heavy first disclosure still drew a full three paragraphs. It cuts padding, not care.
 
 ### What a turn costs, and how that is known
 
