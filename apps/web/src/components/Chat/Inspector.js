@@ -15,7 +15,9 @@ import { checkInspectorToken, clearInspectorToken, setInspectorToken } from '../
  *
  * Shows why a reply is what it is: which Care Patterns the conversation matched, how
  * closely, which of them cleared the relevance floor, and the guidance that was injected
- * into the prompt as a result. Feature 8 added the other half of the same question — how
+ * into the prompt as a result. Feature 9 added the decision that outranks all of that —
+ * whether the turn was screened as a crisis, by what, and whether a match was dropped
+ * because of it. Feature 8 added the other half of the same question — how
  * the prompt was assembled, how much of a long conversation was summarized rather than
  * resent, every upstream call the turn made, and what the turn and the conversation have
  * cost so far. Rendered only for a viewer holding the inspector token —
@@ -155,13 +157,26 @@ export function InspectorPanel({ debug, reply }) {
 
     const top = debug.candidates?.[0];
     const applied = debug.candidates?.filter((c) => c.applied) ?? [];
-    const summary =
-        applied.length > 0
-            ? `${t('inspector.matched')}: ${applied[0].title} · ${scoreText(applied[0].score)}`
-            : `${t('inspector.noMatch')}${top ? ` · ${scoreText(top.score)}` : ''}`;
+    const safety = debug.safety;
+
+    // Three readings, not two. "Nothing matched" and "something matched and was withheld"
+    // are different facts, and on a crisis turn the second one is true while the candidate
+    // list correctly shows nothing as applied — so without this the badge would contradict
+    // the outcome directly below it.
+    let summary;
+    if (applied.length > 0) {
+        summary = `${t('inspector.matched')}: ${applied[0].title} · ${scoreText(applied[0].score)}`;
+    } else if (safety?.overrodeRetrieval) {
+        summary = `${t('inspector.safetyWithheld')}${top ? ` · ${scoreText(top.score)}` : ''}`;
+    } else {
+        summary = `${t('inspector.noMatch')}${top ? ` · ${scoreText(top.score)}` : ''}`;
+    }
 
     return (
         <div className="inspector-panel mt-2 pt-2 border-top small">
+            {/* Crisis first, and in danger colours, because it is the decision that outranks
+                every other one on the turn: when it fires, the match below was discarded. */}
+            {safety?.crisis && <Badge bg="danger" className="me-1">{t('inspector.safetyCrisis')}</Badge>}
             <Badge bg={applied.length > 0 ? 'primary' : 'secondary'}>{summary}</Badge>
             {/* The turn's cost sits beside the match, because the two together are the whole
                 argument: researcher-authored guidance, for a fraction of a cent. */}
@@ -176,11 +191,51 @@ export function InspectorPanel({ debug, reply }) {
                 </Badge>
             )}
             {debug.gap && <div className="text-secondary mt-1">{t('inspector.gapNote')}</div>}
+            {safety?.overrodeRetrieval && <div className="text-danger mt-1">{t('inspector.safetyOverrode')}</div>}
+            {(safety?.classifier === 'failed' || safety?.classifier === 'unparsed') && (
+                <div className="text-warning-emphasis mt-1">{t('inspector.safetyDegraded')}</div>
+            )}
 
             <Accordion flush className="inspector-accordion mt-1">
                 <Accordion.Item eventKey="0">
                     <Accordion.Header>{t('inspector.details')}</Accordion.Header>
                     <Accordion.Body>
+                        {/* Crisis screening (Feature 9 AC 6). Shown even when nothing fired,
+                            because "we looked and saw nothing" and "we never looked" are very
+                            different statements about a safety layer, and only one of them is
+                            reassuring. */}
+                        {safety && (
+                            <>
+                                <div className="fw-semibold">{t('inspector.safety')}</div>
+                                <dl className="row mb-2">
+                                    <dt className="col-6">{t('inspector.safetySource')}</dt>
+                                    <dd className="col-6">
+                                        <code>{safety.source}</code>
+                                    </dd>
+                                    <dt className="col-6">{t('inspector.safetyCategory')}</dt>
+                                    <dd className="col-6">
+                                        <code>{safety.category}</code>
+                                    </dd>
+                                    <dt className="col-6">{t('inspector.safetyClassifier')}</dt>
+                                    <dd className="col-6">
+                                        <code>{safety.classifier}</code>
+                                    </dd>
+                                    <dt className="col-6">{t('inspector.safetyRules')}</dt>
+                                    <dd className="col-6">
+                                        {safety.rules?.length > 0
+                                            ? safety.rules.map((rule) => (
+                                                  <div key={rule}>
+                                                      <code>{rule}</code>
+                                                  </div>
+                                              ))
+                                            : t('inspector.safetyNoRules')}
+                                    </dd>
+                                    <dt className="col-6">{t('inspector.safetyMs')}</dt>
+                                    <dd className="col-6">{safety.durationMs} ms</dd>
+                                </dl>
+                            </>
+                        )}
+
                         <dl className="row mb-2">
                             <dt className="col-6">{t('inspector.outcome')}</dt>
                             <dd className="col-6">

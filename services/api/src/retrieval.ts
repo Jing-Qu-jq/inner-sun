@@ -65,6 +65,8 @@ export type MatchOutcome =
   | "no_patterns"
   /** Too little student text to match on yet — a greeting, an "ok". Not a gap. */
   | "low_signal"
+  /** Deliberately not run: crisis screening had already settled the turn (Feature 9). */
+  | "skipped"
   /** The pipeline itself failed. An operational problem, not an authoring one. */
   | "failed";
 
@@ -100,6 +102,25 @@ export interface RetrievalResult {
    */
   calls: RawCall[];
 }
+
+/**
+ * The result for a turn where retrieval was deliberately not run (Feature 9).
+ *
+ * When the phrase lexicon settles a turn as a crisis, the guidance is going to be dropped
+ * whatever it says — so the two upstream calls and the half-second they take are spent on
+ * nobody's behalf, least of all a student who has just disclosed something serious. This is
+ * an explicit outcome rather than an empty `below_floor` because the difference matters to
+ * everything downstream: `gap` is false (the library was never asked, so this says nothing
+ * about a hole in it) and the inspector can say *why* nothing was retrieved.
+ */
+export const RETRIEVAL_SKIPPED: RetrievalResult = Object.freeze({
+  outcome: "skipped",
+  applied: [],
+  candidates: [],
+  gap: false,
+  durationMs: 0,
+  calls: [],
+});
 
 export interface MatchSource {
   /** The labelled text handed to the normalizer. */

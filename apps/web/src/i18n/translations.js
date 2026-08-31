@@ -80,6 +80,15 @@ export const translations = {
         'chat.starter.stress': 'I’m overwhelmed with academic pressure',
         'chat.starter.friends': 'It’s hard to make friends in a new country',
         'chat.starter.human': 'Can I talk to a real counselor?',
+        // Crisis resources (Feature 9). The heading and the lead-in are UI copy and live
+        // here so they follow the language toggle; the services themselves come from the
+        // API with the turn, because a wrong hotline number is a safety failure and the
+        // server is what decides which list applies.
+        'chat.crisis.title': 'Help is available right now',
+        'chat.crisis.body':
+            'You don’t have to get through this on your own. Real people are on the other end of these, day and night.',
+        'chat.crisis.emergency': 'If you are in immediate danger, call your local emergency number.',
+
         // Shown in place of a reply when a turn fails (Feature 5).
         'chat.error': 'Sorry, something went wrong and your message didn’t get through. Please try again in a moment.',
         'chat.error.offline': 'We couldn’t reach InnerSun. Please check your connection and try again.',
@@ -129,6 +138,20 @@ export const translations = {
         'inspector.callModel': 'Model',
         'inspector.callTokens': 'Tokens (in / out)',
         'inspector.callCost': 'Cost',
+        // Crisis screening (Feature 9 AC 6).
+        'inspector.safety': 'Crisis screening',
+        'inspector.safetyCrisis': 'Crisis — safety path',
+        'inspector.safetySource': 'Detected by',
+        'inspector.safetyCategory': 'Category',
+        'inspector.safetyRules': 'Rules fired',
+        'inspector.safetyClassifier': 'Classifier',
+        'inspector.safetyMs': 'Screening time',
+        'inspector.safetyWithheld': 'Care-Pattern guidance withheld',
+        'inspector.safetyOverrode':
+            'A Care Pattern matched and was dropped — crisis handling takes priority over the knowledge base.',
+        'inspector.safetyDegraded':
+            'The classifier did not answer usably on this turn. The phrase rules still ran; the turn was not escalated on the classifier’s account.',
+        'inspector.safetyNoRules': 'none',
         'inspector.rejected':
             'That reply came back with no inspector data. The token is wrong, or the API is running without INSPECTOR_TOKEN set.',
 
@@ -208,6 +231,10 @@ export const translations = {
         'chat.starter.stress': '学业压力压得我喘不过气',
         'chat.starter.friends': '在陌生的国家很难交到朋友',
         'chat.starter.human': '我可以和真人咨询师聊聊吗？',
+        'chat.crisis.title': '现在就能找到人帮你',
+        'chat.crisis.body': '这件事你不必一个人扛。下面这些线路的另一端，随时都有真人在。',
+        'chat.crisis.emergency': '如果你此刻有危险，请立即拨打当地的紧急电话。',
+
         'chat.error': '抱歉，出了点问题，你的消息没能发送成功。请稍后再试一次。',
         'chat.error.offline': '无法连接到 InnerSun。请检查网络后再试一次。',
         'chat.error.timeout': '这次响应时间过长，已超时。请重新发送一次。',
@@ -256,6 +283,17 @@ export const translations = {
         'inspector.callModel': '模型',
         'inspector.callTokens': 'Token（输入 / 输出）',
         'inspector.callCost': '成本',
+        'inspector.safety': '危机筛查',
+        'inspector.safetyCrisis': '危机 — 已走安全路径',
+        'inspector.safetySource': '由谁判定',
+        'inspector.safetyCategory': '类别',
+        'inspector.safetyRules': '触发的规则',
+        'inspector.safetyClassifier': '分类器',
+        'inspector.safetyMs': '筛查耗时',
+        'inspector.safetyWithheld': '关怀模式指导已被保留不用',
+        'inspector.safetyOverrode': '有关怀模式命中但已被丢弃——危机处理的优先级高于知识库。',
+        'inspector.safetyDegraded': '本轮分类器没有给出可用的答案。短语规则仍然运行了；本轮没有因分类器而升级。',
+        'inspector.safetyNoRules': '无',
         'inspector.rejected': '这条回复没有带回任何检视数据：要么令牌不对，要么 API 启动时没有设置 INSPECTOR_TOKEN。',
 
         'login.title': '登录',

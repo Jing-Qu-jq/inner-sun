@@ -195,7 +195,9 @@ flowchart TD
     Anon --> Chat
     Chat --> FAQ{"是常见问题 /<br/>快捷回复吗?"}
     FAQ -->|"是"| Canned["返回预设答案<br/>不调用 LLM · $0"]
-    FAQ -->|"否"| Signal{"信息是否足够<br/>进行(重新)匹配?"}
+    FAQ -->|"否"| SafetyChk{"危机 / 自伤信号?<br/>短语规则 + 分类器"}
+    SafetyChk -->|"是"| Crisis["切换到危机指令<br/>丢弃关怀模式指导 · 不做预约引导"]
+    SafetyChk -->|"否"| Signal{"信息是否足够<br/>进行(重新)匹配?"}
     Signal -->|"否（例如只说 hi）"| GeneralEarly["通用共情回复"]
     Signal -->|"是"| Retrieve["嵌入对话 →<br/>向量搜索: 前 N 条关怀模式"]
     Retrieve --> Floor{"匹配分数 ≥<br/>相关性下限?"}
@@ -203,35 +205,42 @@ flowchart TD
     Floor -->|"是"| Strat["注入匹配到的<br/>关怀模式策略"]
     GeneralEarly --> Build
     General --> Build
-    Strat --> Build["组装提示词:<br/>系统提示 + 策略 + 历史"]
+    Strat --> Build["组装提示词:<br/>系统提示 + 历史 + 本轮指令"]
+    Crisis --> Build
     Build --> Gen["gpt-4o 生成回复"]
-    Gen --> SafetyChk{"危机 / 自伤信号?"}
-    SafetyChk -->|"是"| Crisis["危机资源 + 热线<br/>立即转接真人"]
-    SafetyChk -->|"否"| NudgeChk{"意愿评分 ≥ 阈值,<br/>或用户主动询问?"}
+    Gen --> CrisisOut{"本轮是<br/>危机对话吗?"}
+    CrisisOut -->|"是"| Res["附上危机求助资源<br/>+ 记录去标识化的安全事件"]
+    CrisisOut -->|"否"| NudgeChk{"意愿评分 ≥ 阈值,<br/>或用户主动询问?"}
     NudgeChk -->|"是"| Nudge["温和地建议预约<br/>一位真人咨询师"]
     NudgeChk -->|"否"| Reply
-    Crisis --> Reply(["回复用户"])
+    Res --> Reply(["回复用户"])
     Nudge --> Reply
     Canned --> Reply
     Reply --> LogStep["若已获同意则记录<br/><i>去标识化 (de-identified)</i>"]
     classDef decision fill:#fff3e0,stroke:#e08600,color:#5a3b00;
     classDef danger fill:#fdeef3,stroke:#d6336c,color:#7a1138;
-    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk decision;
-    class Crisis danger;
+    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut decision;
+    class Crisis,Res danger;
   </pre><div class="figcap">图 2 — 单条消息的对话流程。</div></div>
 
   <div class="note plain"><span class="label">通俗解释</span><br/>
     任何人都能即时、匿名地开始——这就是「树洞 (tree hole)」的承诺，也是漏斗的顶端。<b>注册用户</b>不仅会被记住历史，还有先发
     优势：注册问卷会在他们打出第一个字之前，就预置一个初始的关怀模式匹配。常见问题（例如「这是保密的吗?」）用预写好的文字回答，
-    完全不调用 AI。对于真正的倾诉，我们会悄悄地把学生匹配到研究员的案例，运用相应指导，写出关怀的回复，做安全检查——只有在信任
-    已建立时，才提及有真人咨询师可预约。</div>
+    完全不调用 AI。每一条真实的倾诉都会先被检查是否有危险的迹象；一旦发现，其余流程全部让路，学生会立刻拿到危机
+    求助资源，并被推向真人——是现在，而不是下周。若没有，我们才会悄悄地把学生匹配到研究员的案例，运用相应指导，写出关怀的
+    回复；只有在信任已建立时，才提及有真人咨询师可预约。</div>
 
   <div class="note eng"><span class="label">工程细节</span><br/>
     匹配是一个<em>持续进行 (running)</em> 的评估。对<b>匿名</b>用户，我们不会在第一句「hi」就匹配；而是等到有足够实质内容
     （对学生自己写下的文字设一个较小的字符阈值，<code>CARE_PATTERN_MIN_SIGNAL_CHARS</code>），再由
     <b>相关性下限 (relevance floor)</b> 决定是否真的套用某个模式。
-    对<b>注册</b>用户，问卷给出一个温暖的起点，再由对话逐步细化。危机检测是一条独立、更高优先级的通道——它绝不会引导
-    「下周预约」，而是立即给出即时资源。</div>
+    对<b>注册</b>用户，问卷给出一个温暖的起点，再由对话逐步细化。
+    <br/><br/>
+    <b>危机检测是一条独立、更高优先级的通道。</b>它由两个检测器组成：一份中英文的高精确度短语词表（零成本，且不会因上游故障
+    而失效），以及一个结合上下文判断的 <code>gpt-4o-mini</code> 分类器。任何一个命中，整轮对话都会改道——检索到的关怀模式指导
+    会被<b>直接丢弃而非融合</b>，预约引导被抑制，回复改用危机指令来写。热线号码本身绝不经过语言模型：它们由应用层附加，因为
+    让模型「给个热线」得到的往往是一个看起来很像、其实是错的号码。分类器失败时<b>不会</b>升级为危机——若反过来「宁可错杀」，
+    上游每打一次嗝，普通对话就会被塞一堆热线——失败会作为「安全层降级」记入日志。</div>
 
   <!-- ===== 3 ===== -->
   <h2 id="s3"><span class="num">3</span>关怀模式 — 存储、检索与冷启动 (RAG) 🟢</h2>

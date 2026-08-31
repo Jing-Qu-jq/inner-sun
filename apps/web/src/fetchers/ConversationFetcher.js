@@ -148,12 +148,20 @@ async function postChat({ message, conversationId, locale, compare }) {
         throw new ChatRequestError('bad_response', { status: response.status });
     }
 
-    // `debug` is present only for a valid inspector token; undefined for everyone else.
-    return { reply: body.reply, conversationId: body.conversationId, locale: body.locale, debug: body.debug };
+    // `crisis` is present only on a turn the API screened as a crisis (Feature 9), and
+    // `debug` only for a valid inspector token; both are undefined otherwise. Neither is
+    // re-derived here — the browser is not in a position to second-guess a safety decision.
+    return {
+        reply: body.reply,
+        conversationId: body.conversationId,
+        locale: body.locale,
+        crisis: body.crisis,
+        debug: body.debug,
+    };
 }
 
 /**
- * Send one message and return `{ reply, conversationId, locale, debug }`.
+ * Send one message and return `{ reply, conversationId, locale, crisis, debug }`.
  *
  * Pass the `conversationId` from the previous reply to continue a conversation;
  * omit it to start one. History itself is the server's business — it lives in

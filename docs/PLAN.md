@@ -273,7 +273,7 @@ The pattern's strategies are *"the calls are a lifeline, not a bad habit"*, *"a 
 
 This leaks nothing: someone guessing tokens can already see that no panel appeared, so the message tells them only what the screen told them. The verdict is judged against the token as it stood when the turn was *sent* (held in a ref), because unlocking mid-flight would otherwise report a rejection that never happened, and entering a new token clears the old verdict. The general point is worth keeping: **an observability surface that fails silently is worse than no observability surface**, because it converts "this is off" into "this found nothing", and those two readings lead somewhere very different.
 
-**The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: ✅ Feature 8's prompt assembly and token budget (delivered — the panel now shows how many messages went in full versus were replaced by the summary, the summary text itself, every upstream call with its model and tokens, and what the turn and the conversation have cost), **Feature 9's crisis detection — how the signal was detected**, and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
+**The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: ✅ Feature 8's prompt assembly and token budget (delivered — the panel now shows how many messages went in full versus were replaced by the summary, the summary text itself, every upstream call with its model and tokens, and what the turn and the conversation have cost), ✅ Feature 9's crisis detection (delivered — the panel now shows which detector fired, the category, the classifier's label, the rule ids, and an explicit line when a Care-Pattern match was overridden), and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
 
 **Not done here, on purpose:** the rows those later features will add, since the decisions they show do not exist yet.
 
@@ -325,16 +325,93 @@ What is left is volume. Caching engaged reliably only against a prefix that had 
 
 **Not done here, on purpose:** rate limiting and abuse protection are Feature 20, not this feature's `max_tokens` caps; the semantic cache stays *Future*; and `messages.usage` is stored but not yet aggregated anywhere a researcher can see it, which is Feature 19's job.
 
-## Feature 9: Safety / crisis detection 🟢 (must-have)
+## Feature 9: Safety / crisis detection ✅ (done — verified live, 2026-08-29)
 Non-negotiable for a mental-health product.
 **Depends on:** Feature 5.
-**AC:**
-1. Each user message is screened for crisis/self-harm signals (LLM/rule-based for v1).
-2. On a positive signal, the app surfaces **crisis resources / hotline info** and an **immediate human hand-off** message — it does **not** proceed with a normal booking nudge.
-3. Crisis handling takes priority over Care-Pattern matching and the booking nudge.
-4. A clear, visible **"not a medical device / not emergency services"** disclaimer is present in the chat UI.
-5. Crisis triggers are logged (de-identified) for later evaluation.
-6. The **Feature 22 inspector shows how the signal was detected** for that turn — what fired, and that it took priority over Care-Pattern matching. Screening runs before retrieval and overrides it, so a turn where crisis handling took over is otherwise indistinguishable from one where nothing matched.
+
+**AC (all met):**
+1. ✅ **Every message is screened**, by two detectors that are deliberately independent and OR'd
+   together. A small **phrase lexicon** (11 rules, English and Chinese, `services/api/src/safety.ts`) is
+   free, synchronous and cannot be broken by an upstream outage; a **`gpt-4o-mini` classifier**
+   (`prompts/crisis-screen.md`, temperature 0, capped at 8 tokens) is the primary detector and the only
+   one that can read *"some nights I lie awake thinking my family would be better off"* for what it is.
+   Measured, not asserted: `npm run safety:check -- --live` runs 25 labelled cases through the real
+   module and scored **12/12 recall and 13/13 precision**.
+2. ✅ **Resources and a human hand-off, and no booking nudge.** A crisis turn returns a `crisis` object
+   on the response — a category and a localized resource list — which the web app renders as a panel
+   under the reply (`apps/web/src/components/Chat/CrisisNotice.js`). The reply itself is written to a
+   different directive (`prompts/crisis-directive.md`) that forbids coping tips, forbids the booking
+   nudge, and asks one direct question about immediate safety. Feature 11's booking flow does not exist
+   yet, so today the hand-off *is* the resource list — every entry on it is staffed by people, now.
+3. ✅ **Crisis outranks Care-Pattern matching.** Demonstrated on a live turn: the homesickness pattern
+   matched at **0.6291** against a 0.54 floor and its guidance was **dropped, not blended** — the
+   inspector reads "Care-Pattern guidance withheld · 0.6291". The retrieved strategies are discarded
+   rather than merged, because a student disclosing self-harm does not need study tips alongside a
+   hotline.
+4. ✅ **The disclaimer is visible in the chat UI.** It used to live inside the empty state, which meant
+   it disappeared the moment a student sent their first message — that is, everywhere it mattered. It
+   now sits under the composer for the whole session, in both languages.
+5. ✅ **Triggers are logged, de-identified.** Migration `0006_safety_events.sql` adds `safety_events`:
+   conversation id, message id, category, which detector fired, **rule identifiers** and the classifier
+   label. No message content, no matched phrase — a table of crisis disclosures quoted verbatim would be
+   the most sensitive object in this system, and the way to keep it safe is not to build one. Every turn
+   also produces a `crisis screening` log line, positives and negatives alike, which is where the
+   negatives that a recall study needs actually live.
+6. ✅ **The inspector shows how the signal was detected** — a red "Crisis — safety path" badge, the
+   detector, the category, the classifier's label, the rule ids, the screening time, and an explicit
+   line when a match was overridden. Verified in a real browser on all three paths (rules, classifier,
+   neither).
+
+**⚠️ Outstanding, and it is a launch blocker rather than an engineering one: the resource list needs a
+researcher's sign-off.** `services/api/src/crisis-resources.ts` is deliberately a separate, small file so
+that reading it takes a minute. Every entry is a real, widely published service — local emergency
+numbers, `findahelpline.com`, the 988 Lifeline, Samaritans, and the Beijing crisis line for the Chinese
+list — but hotline numbers change, services close, and this list was assembled by an engineer. Before
+InnerSun is in front of a student, a researcher must confirm each entry and decide whether the set fits
+the population being served.
+
+**Design decisions worth carrying forward:**
+- **No hotline number ever passes through a language model.** The reply on a crisis turn is generated;
+  the resources are data. A model asked to "give them a hotline" produces a plausible, wrong number, and
+  a student who calls it reaches a dead line at the worst possible moment. `crisis-directive.md`
+  therefore forbids the model from stating any number or URL and tells it to say "the services below".
+- **A crisis turn never becomes an error bubble.** If the `gpt-4o` call fails on an ordinary turn the
+  student is told, and that has been right since Feature 4. On a crisis turn it is not: the one moment
+  this product must not answer with "something went wrong, please try again" is the moment someone has
+  just said they are in danger. So the turn degrades to fixed localized text plus the resource list, and
+  the transcript records the fallback because that is what the student actually saw. Verified by pointing
+  `OPENAI_BASE_URL` at a dead port: an ordinary message returned `502 upstream_unreachable`, the crisis
+  message returned `200` with the fallback and all four resources.
+- **It fails open, on purpose.** A classifier that errors, times out or answers outside its label set does
+  **not** escalate the turn. Failing closed sounds safer and is not — an OpenAI hiccup would put hotline
+  numbers in front of students discussing coursework, and a panel that cries wolf stops being read. The
+  lexicon still stands underneath, and the failure is logged as `crisis screening degraded` and shown in
+  the inspector rather than hidden.
+- **The lexicon is a floor, not a detector, and that is why it is narrow.** A rule hit *skips* the
+  classifier, so a loose rule would be a false positive nothing could overrule. It therefore holds only
+  first-person statements with no ordinary reading; "I can't do this any more", bare "suicide" and
+  "overdose" are deliberately absent because they belong to the detector that can read context. Two
+  targeted exclusions came out of the measurement: `want to die of/from …` (the "die of embarrassment"
+  idiom) and `得我想死` (累得我想死). Rules-only mode fires on **0 of 13** ordinary messages, and misses 6
+  of 12 crisis cases *by design* — which is why `safety:check` reports recall in that mode without
+  failing on it.
+- **Screening runs alongside retrieval, not strictly in front of it.** What AC 6 requires is the
+  *override*, and that holds. Ordering the two calls serially would have added the classifier's latency
+  to the front of every ordinary turn to buy nothing on any of them. The free half of screening does run
+  first, though: when the lexicon settles a turn, retrieval is never dispatched — a rule-triggered crisis
+  makes exactly **one** upstream call, versus four on an ordinary turn.
+- **Rules read only the newest message; the classifier reads context.** Screening the whole window with
+  the lexicon would re-trigger crisis handling on turns 5, 6 and 7 after a disclosure on turn 4 — the
+  student says "thanks, I'm okay now" and gets the hotline panel again. The classifier gets the last two
+  student messages and is told explicitly that it is ruling on the newest one.
+- **A known limitation: screening is per-turn.** A disclosure on turn 4 does not put the conversation
+  into a heightened state for turn 5. That is the natural companion to Feature 23's held formulation,
+  which is where conversation state that survives a turn is being designed, and it should be picked up
+  there rather than bolted on here.
+- **Cost is negligible and visible.** The screening call is `gpt-4o-mini` at roughly 800 prompt tokens and
+  5 completion tokens — **$0.0001**, about 2% of a turn — and it appears as its own `crisis-screen` row in
+  the inspector's call table, so Feature 8's model tiering stays legible rather than being quietly eroded
+  by a new call.
 
 ## Feature 23: A working formulation that survives a turn 🟢
 Stop the match flapping at the relevance floor, and give every student a head start.

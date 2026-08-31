@@ -200,20 +200,27 @@ export async function appendMessage(
   conversationId: string,
   message: ChatMessage,
   usage?: StoredUsage,
-): Promise<void> {
-  // Both statements in one round trip. The CTE runs the insert, and the update
-  // is driven off its result so the two cannot disagree about which row to touch.
-  await query(
+): Promise<string> {
+  // Both statements in one round trip. The CTE runs the insert, the update is driven off
+  // its result so the two cannot disagree about which row to touch, and the trailing select
+  // hands back the new message's id — which Feature 9 attaches a safety event to, so a
+  // crisis trigger points at the exact turn that produced it rather than at the whole
+  // conversation. A data-modifying CTE cannot be read from an UPDATE's own RETURNING, hence
+  // the final SELECT rather than a third statement.
+  const { rows } = await query<{ id: string }>(
     `with inserted as (
        insert into messages (conversation_id, role, content, usage)
        values ($1, $2, $3, $4)
-       returning conversation_id
+       returning id, conversation_id
+     ), touched as (
+       update conversations
+          set last_message_at = now()
+        where id = (select conversation_id from inserted)
      )
-     update conversations
-        set last_message_at = now()
-      where id = (select conversation_id from inserted)`,
+     select id from inserted`,
     [conversationId, message.role, message.content, usage ? JSON.stringify(usage) : null],
   );
+  return rows[0]!.id;
 }
 
 /**
