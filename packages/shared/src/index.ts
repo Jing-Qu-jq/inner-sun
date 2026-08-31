@@ -64,6 +64,41 @@ export interface ChatRequest {
 }
 
 /**
+ * One place a student in crisis can reach a human, right now (Feature 9).
+ *
+ * Deliberately a plain, server-supplied record rather than something the model writes. A
+ * hallucinated phone number is not a cosmetic error in a mental-health product, so the
+ * numbers never pass through a language model on their way to the student: the reply is
+ * generated, the resources are data. Localized for the conversation's language by the API,
+ * which is also where the decision to show them is made — a client that received "crisis:
+ * true" and had to look up its own copy of the list could show nothing at all.
+ */
+export interface CrisisResource {
+  /** Who or what it is, in the student's language. */
+  name: string;
+  /** How to reach it: a phone number, a short code, or a URL. Rendered verbatim. */
+  contact: string;
+  /** Where it applies, or when to use it. One short line. */
+  note?: string;
+}
+
+/**
+ * What the app surfaces on a turn where crisis screening fired (Feature 9 AC 2).
+ *
+ * Present on the response only for such a turn, and never for an ordinary one — so a client
+ * renders the panel by asking whether the field exists, not by re-deriving the judgement.
+ */
+export interface ChatCrisis {
+  /**
+   * Which kind of risk was detected: self_harm, harm_to_others, abuse_or_violence,
+   * medical_emergency. Carried so a client can adapt its wording; the resource list is
+   * already chosen for it.
+   */
+  category: string;
+  resources: CrisisResource[];
+}
+
+/**
  * One Care Pattern the retrieval step considered for a turn (Feature 22).
  * Scores are cosine similarity, 0-1. Only ever sent to a privileged viewer.
  */
@@ -129,6 +164,36 @@ export interface ChatDebugPrompt {
 }
 
 /**
+ * How this turn was screened for crisis signals, and what that decided (Feature 9 AC 6).
+ *
+ * Screening is invisible in the reply and invisible in the retrieval trace: a turn where
+ * crisis handling took over and dropped a matched Care Pattern looks, from the outside,
+ * exactly like a turn where nothing matched. This is the record that tells them apart.
+ *
+ * Nothing here is the student's text. `rules` carries rule *identifiers*, not the phrase
+ * that matched, for the same reason no other log line in this service carries content.
+ */
+export interface ChatDebugSafety {
+  /** True when this turn triggered crisis handling. */
+  crisis: boolean;
+  /** What decided it: rules, classifier, both, or none. */
+  source: string;
+  /** The kind of risk, or "none". */
+  category: string;
+  /** Identifiers of the phrase rules that fired — never the phrase, never the message. */
+  rules: string[];
+  /**
+   * What the classifier answered: a label, "skipped" when the rules already decided,
+   * "unparsed" when it replied with something outside the label set, or "failed".
+   */
+  classifier: string;
+  /** True when patterns cleared the relevance floor and were dropped because crisis won. */
+  overrodeRetrieval: boolean;
+  /** How long screening took, in milliseconds. */
+  durationMs: number;
+}
+
+/**
  * Why the reply is what it is (Feature 22).
  *
  * Present only when the request carried a valid inspector credential; an ordinary
@@ -136,6 +201,12 @@ export interface ChatDebugPrompt {
  * the turn — the inspector decides whether to send it, not whether to compute it.
  */
 export interface ChatDebug {
+  /**
+   * Crisis screening for this turn (Feature 9). Listed first because it outranks every
+   * other decision here: when `crisis` is true the retrieval below was computed and then
+   * discarded, and the reply was written to a different directive entirely.
+   */
+  safety?: ChatDebugSafety;
   /** What retrieval concluded: applied, below_floor, no_patterns, low_signal, failed. */
   outcome: string;
   /** True when a real situation found no pattern close enough — a Care-Pattern gap. */
@@ -183,6 +254,11 @@ export interface ChatResponse {
   reply: string;
   /** The language the reply was requested in — echoed so the client can confirm. */
   locale: Locale;
+  /**
+   * Crisis resources for this turn (Feature 9). Present only when screening fired, which
+   * is what tells a client to show them — the judgement is the server's, not the browser's.
+   */
+  crisis?: ChatCrisis;
   /** Retrieval internals — privileged viewers only (Feature 22). */
   debug?: ChatDebug;
 }

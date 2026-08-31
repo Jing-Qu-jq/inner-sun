@@ -12,6 +12,8 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
  *
  *   prompts/system-prompt.md    static. Identical bytes on every request, forever.
  *   prompts/turn-directive.md   per-turn. The language note and the retrieved guidance.
+ *   prompts/crisis-directive.md per-turn, and instead of the above, when crisis screening
+ *                               fired (Feature 9). Same position, so the prefix is unchanged.
  *
  * and the order they are assembled in is
  *
@@ -66,6 +68,16 @@ export const STATIC_SYSTEM_PROMPT = loadPrompt("system-prompt.md");
 
 const TURN_DIRECTIVE_TEMPLATE = loadPrompt("turn-directive.md");
 
+/**
+ * The directive that replaces the ordinary one on a crisis turn (Feature 9).
+ *
+ * A whole separate file rather than an extra paragraph in the usual one, because the two are
+ * mutually exclusive instructions: the ordinary directive hands over Care-Pattern strategies
+ * and permits a booking nudge, and both of those are exactly what must not happen here. It
+ * occupies the same position in the prompt, so the cacheable prefix is unchanged.
+ */
+const CRISIS_DIRECTIVE_TEMPLATE = loadPrompt("crisis-directive.md");
+
 /** How each locale should be named to the model, in its own script. */
 const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
@@ -80,10 +92,19 @@ export interface TurnDirectiveOptions {
    * directive's own wording then tells the model to answer in general terms.
    */
   carePatternStrategies?: string;
+  /**
+   * True when crisis screening fired for this turn (Feature 9). The crisis directive is
+   * used instead, and `carePatternStrategies` is ignored — deliberately, so that a caller
+   * who forgot to clear the guidance cannot accidentally reintroduce coping advice into a
+   * turn where the whole point is that there is none.
+   */
+  crisis?: boolean;
 }
 
 /** Fill the per-turn template: the language note and this turn's Care Pattern guidance. */
-export function buildTurnDirective({ locale, carePatternStrategies = "" }: TurnDirectiveOptions): string {
+export function buildTurnDirective({ locale, carePatternStrategies = "", crisis = false }: TurnDirectiveOptions): string {
+  if (crisis) return CRISIS_DIRECTIVE_TEMPLATE.replaceAll("{{locale}}", LOCALE_LABELS[locale]);
+
   return TURN_DIRECTIVE_TEMPLATE.replaceAll("{{locale}}", LOCALE_LABELS[locale]).replaceAll(
     "{{care_pattern_strategies}}",
     carePatternStrategies.trim(),
@@ -100,6 +121,8 @@ export interface ChatPromptOptions {
   message: string;
   /** This turn's Care Pattern guidance, or "" when nothing cleared the floor. */
   carePatternStrategies?: string;
+  /** True when crisis screening fired: the crisis directive replaces the ordinary one. */
+  crisis?: boolean;
 }
 
 /**
@@ -114,6 +137,7 @@ export function buildChatMessages({
   history,
   message,
   carePatternStrategies = "",
+  crisis = false,
 }: ChatPromptOptions): ChatCompletionMessageParam[] {
   const messages: ChatCompletionMessageParam[] = [{ role: "system", content: STATIC_SYSTEM_PROMPT }];
 
@@ -131,7 +155,7 @@ export function buildChatMessages({
     messages.push({ role: turn.role, content: turn.content } as ChatCompletionMessageParam);
   }
 
-  messages.push({ role: "system", content: buildTurnDirective({ locale, carePatternStrategies }) });
+  messages.push({ role: "system", content: buildTurnDirective({ locale, carePatternStrategies, crisis }) });
   messages.push({ role: "user", content: message });
 
   return messages;

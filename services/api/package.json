@@ -13,6 +13,7 @@
     "clean": "rm -rf dist",
     "admin:create": "tsx src/scripts/create-admin.ts",
     "retrieval:calibrate": "tsx src/scripts/calibrate-retrieval.ts",
+    "safety:check": "tsx src/scripts/check-safety.ts",
     "copy:admin": "rm -rf dist/public && if [ -d ../../apps/admin/dist ]; then mkdir -p dist/public && cp -R ../../apps/admin/dist/. dist/public/; else echo 'note: admin bundle not built (npm run build:admin)'; fi"
   },
   "dependencies": {

@@ -100,7 +100,8 @@ rather than repointing `DATABASE_URL`.
 
 ```
 docker-compose.yml   Local Postgres 16 + pgvector
-migrations/          Ordered *.sql schema migrations (0001 = initial schema, 0002 = embedding provenance)
+migrations/          Ordered *.sql schema migrations (0001 = initial schema, 0002 = embedding provenance,
+                     0003 = admin, 0004 = pattern status, 0005 = summary + usage, 0006 = safety events)
 seeds/               Starter seed data (synthetic, de-identified) + exported backups
 scripts/             Migration runner, seeder, reset, verify, reembed, export, pull (TypeScript, via tsx)
 scripts/lib/         Shared helpers: env, embedding, vector, guard, CLI args

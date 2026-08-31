@@ -14,6 +14,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminFaqRoutes } from "./routes/admin-faq.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { logRetrievalReadiness } from "./retrieval.js";
+import { logSafetyReadiness } from "./safety.js";
 import { logCostControls } from "./usage.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -108,6 +109,10 @@ export function buildServer() {
       // history window and prompt caching all fail by being quietly expensive rather than by
       // breaking, so each is stated once at boot where it can be read against the intent.
       logCostControls(app.log);
+      // And the Feature 9 safety layer. Same reasoning again, with more at stake: a lexicon
+      // that failed to load or a classifier prompt missing from dist/ produces a service
+      // that answers every message beautifully and screens none of them.
+      logSafetyReadiness(app.log);
     });
   } else {
     app.log.warn("POST /chat is disabled (ENABLE_CHAT_ROUTES=false) — admin-only instance");

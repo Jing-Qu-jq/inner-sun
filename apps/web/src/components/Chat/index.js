@@ -9,6 +9,7 @@ import { ChatHeart } from 'react-bootstrap-icons';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 import ConversationFetcher, { MAX_MESSAGE_LENGTH, getInspectorToken } from '../../fetchers/ConversationFetcher';
+import { CrisisNotice } from './CrisisNotice';
 import { InspectorBar, InspectorPanel, inspectorRequested } from './Inspector';
 import { useI18n } from '../../i18n';
 
@@ -142,7 +143,7 @@ function Chat() {
 
         sendQueueRef.current = sendQueueRef.current.then(async () => {
             try {
-                const { reply, conversationId, debug } = await ConversationFetcher({
+                const { reply, conversationId, crisis, debug } = await ConversationFetcher({
                     message: text,
                     conversationId: conversationIdRef.current,
                     locale,
@@ -151,9 +152,10 @@ function Chat() {
                 // Every later turn carries this, which is how the API knows
                 // which stored conversation to append to.
                 conversationIdRef.current = conversationId;
-                // `debug` is undefined for everyone but an inspector, so it is stored
-                // unconditionally and simply has nothing to show in the ordinary case.
-                resolvePlaceholder(placeholderId, { text: reply, className: undefined, debug });
+                // `crisis` is present only on a turn the API screened as one (Feature 9) and
+                // `debug` only for an inspector, so both are stored unconditionally and simply
+                // have nothing to show in the ordinary case.
+                resolvePlaceholder(placeholderId, { text: reply, className: undefined, crisis, debug });
                 // Read from the ref rather than the captured value: the token can be unlocked
                 // while this turn is in flight, and judging a reply against a token that was
                 // not sent with it would report a rejection that never happened.
@@ -176,14 +178,15 @@ function Chat() {
     // stored message keeps carrying the plain reply.
     const dataSource = messageList.map((item) => {
         if (item.errorKey) return { ...item, text: t(item.errorKey) };
-        if (!item.debug) return item;
+        if (!item.debug && !item.crisis) return item;
         return {
             ...item,
-            className: 'message-inspected',
+            className: item.debug ? 'message-inspected' : item.className,
             text: (
                 <>
                     <span>{item.text}</span>
-                    <InspectorPanel debug={item.debug} reply={item.text} />
+                    {item.crisis && <CrisisNotice crisis={item.crisis} />}
+                    {item.debug && <InspectorPanel debug={item.debug} reply={item.text} />}
                 </>
             ),
         };
@@ -254,12 +257,16 @@ function Chat() {
                 </Button>
             </div>
 
+            {/* Feature 9 AC 4. This used to live inside the empty state, which meant it
+                vanished the moment a student sent their first message — that is, everywhere
+                it actually matters. It now sits under the composer for the whole session. */}
+            <p className="chat-disclaimer text-secondary text-center mt-2 mb-0" style={{ fontSize: '0.72rem' }}>
+                {t('chat.disclaimer')}
+            </p>
+
             {!chatMode && (
                 <div className="mb-auto">
-                    <p className="text-secondary text-center mt-2 mb-5" style={{ fontSize: '0.72rem' }}>
-                        {t('chat.disclaimer')}
-                    </p>
-                    <div className="mx-auto" style={{ maxWidth: '640px' }}>
+                    <div className="mx-auto mt-5" style={{ maxWidth: '640px' }}>
                         {starters.map((text) => (
                             <button
                                 key={text}

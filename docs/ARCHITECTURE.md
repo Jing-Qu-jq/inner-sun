@@ -113,7 +113,9 @@ flowchart TD
 
     Chat --> FAQ{"Is it a common<br/>FAQ / quick-reply?"}
     FAQ -->|"Yes"| Canned["Return canned answer<br/>no LLM · $0"]
-    FAQ -->|"No"| Signal{"Enough signal<br/>to (re)match?"}
+    FAQ -->|"No"| SafetyChk{"Crisis / self-harm?<br/>phrase rules + classifier"}
+    SafetyChk -->|"Yes"| Crisis["Crisis directive<br/>guidance dropped · no booking nudge"]
+    SafetyChk -->|"No"| Signal{"Enough signal<br/>to (re)match?"}
 
     Signal -->|"No (e.g. just 'hi')"| GeneralEarly["General empathetic reply"]
     Signal -->|"Yes"| Retrieve["Embed conversation →<br/>vector search: top-N Care Patterns"]
@@ -123,24 +125,25 @@ flowchart TD
 
     GeneralEarly --> Build
     General --> Build
-    Strat --> Build["Assemble prompt:<br/>system + strategies + history"]
+    Strat --> Build["Assemble prompt:<br/>system + history + turn directive"]
+    Crisis --> Build
     Build --> Gen["gpt-4o writes the reply"]
 
-    Gen --> SafetyChk{"Crisis / self-harm?"}
-    SafetyChk -->|"Yes"| Crisis["Crisis resources + hotline<br/>immediate human hand-off"]
-    SafetyChk -->|"No"| NudgeChk{"Readiness score ≥<br/>threshold, or asked?"}
+    Gen --> CrisisOut{"Was it a<br/>crisis turn?"}
+    CrisisOut -->|"Yes"| Res["Attach crisis resources<br/>+ de-identified safety event"]
+    CrisisOut -->|"No"| NudgeChk{"Readiness score ≥<br/>threshold, or asked?"}
     NudgeChk -->|"Yes"| Nudge["Gently suggest booking<br/>a real counselor"]
     NudgeChk -->|"No"| Reply
 
-    Crisis --> Reply(["Reply to user"])
+    Res --> Reply(["Reply to user"])
     Nudge --> Reply
     Canned --> Reply
     Reply --> LogStep["Log if consented<br/><i>de-identified</i>"]
 
     classDef decision fill:#fff3e0,stroke:#e08600,color:#5a3b00;
     classDef danger fill:#fdeef3,stroke:#d6336c,color:#7a1138;
-    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk decision;
-    class Crisis danger;
+    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut decision;
+    class Crisis,Res danger;
 ```
 
 </details>
@@ -148,16 +151,27 @@ flowchart TD
 **Plain language:** Anyone can start instantly and anonymously — the "tree hole" promise and top of the
 funnel. **Registered** users get their history remembered *and* a head start: the sign-up questionnaire
 seeds an initial Care-Pattern match before they type a word. Common questions ("Is this private?") are
-answered by pre-written text with no AI call. For real messages, we quietly match the student to
-researcher cases, apply that guidance, write a caring reply, check it's safe, and — only when trust is
-there — mention that a real counselor is available.
+answered by pre-written text with no AI call. Every real message is first checked for signs that the
+student is in danger; if it finds any, everything else stops and they get crisis resources and a push
+toward a real person now, not next week. Otherwise we quietly match the student to researcher cases,
+apply that guidance, write a caring reply, and — only when trust is there — mention that a real
+counselor is available.
 
 **Engineering detail:** Matching is a *running* assessment. For **anonymous** users we don't match on the
 first "hi"; we wait until a message carries enough substance to be worth embedding (a small character
 threshold on the student's own text, `CARE_PATTERN_MIN_SIGNAL_CHARS`) and let the **relevance floor**
 decide whether to actually apply a pattern. For **registered** users the questionnaire gives a warm start
-that the conversation then refines. Crisis detection is a
-separate, higher-priority path — it never routes to "book next week," it surfaces immediate resources.
+that the conversation then refines.
+
+**Crisis detection is a separate, higher-priority path** (Feature 9). Two detectors run: a small,
+high-precision phrase lexicon in English and Chinese, which is free and cannot be broken by an upstream
+outage, and a `gpt-4o-mini` classifier that reads the message in context. A hit from either reroutes the
+whole turn — the retrieved Care-Pattern guidance is **dropped rather than blended**, the booking nudge is
+suppressed, and the reply is written to a crisis directive instead. The hotline numbers themselves never
+pass through a language model: they are appended by the application, because a model asked for a hotline
+produces a plausible wrong one. When the lexicon settles the turn, retrieval is not dispatched at all. A
+classifier that fails does **not** escalate the turn — failing closed would put hotlines in front of
+ordinary conversations on every upstream hiccup — and the failure is logged as a degraded safety layer.
 
 ---
 
