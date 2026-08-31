@@ -130,12 +130,14 @@ flowchart TD
     UI -->|HTTPS| API
     subgraph Backend["⚙️ Backend — Orchestration API (the brain)"]
         API["API Gateway + Auth<br/><i>login optional</i>"]
+        SAFE["Safety / Crisis Detection<br/><i>runs first · overrides the rest</i>"]
         ORCH["Chat Orchestrator"]
-        SAFE["Safety / Crisis Detection"]
         NUDGE["Booking-Nudge Engine<br/><i>readiness score</i>"]
+        CRISISOUT["Crisis resources<br/><i>no retrieval · no nudge</i>"]
     end
-    API --> ORCH
-    ORCH --> SAFE
+    API --> SAFE
+    SAFE -->|"crisis"| CRISISOUT
+    SAFE -->|"clear"| ORCH
     ORCH --> NUDGE
     subgraph AI["🤖 AI Layer — OpenAI (model-tiered for cost)"]
         EMB["Embeddings<br/>text-embedding-3-small"]
@@ -529,7 +531,7 @@ flowchart LR
       <tr><td>3</td><td><b>Relevance-floor calibration</b></td><td>Picks the cosine threshold from labeled data</td><td>small</td><td>analysis</td><td><span class="pill v1">v1</span></td></tr>
       <tr><td>4</td><td><b>Product &amp; funnel analytics</b></td><td>Volume, languages, issue types, conversion</td><td>minimal</td><td>analysis</td><td><span class="pill v1">v1</span></td></tr>
       <tr><td>5</td><td><b>Care-Pattern gap analysis</b></td><td>Finds situations with no good pattern</td><td>small</td><td>analysis</td><td><span class="pill v1">v1</span></td></tr>
-      <tr><td>6</td><td><b>Crisis-detection evaluation</b></td><td>Measures recall of the safety layer</td><td>small</td><td>analysis</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>6</td><td><b>Crisis-detection evaluation</b></td><td>Measures recall of the safety layer. Started: <code>npm run safety:check</code> scores 25 labelled cases through the real screener, and <code>safety_events</code> records every trigger de-identified</td><td>small</td><td>analysis</td><td><span class="pill v1">v1</span></td></tr>
       <tr><td>7</td><td><b>Re-ranker / cross-encoder</b></td><td>Trained model on top of retrieval to beat raw cosine</td><td>med–large</td><td>trained</td><td><span class="pill future">Future</span></td></tr>
       <tr><td>8</td><td><b>Fine-tuned domain embeddings</b></td><td>Better EN↔中文 clinical similarity</td><td>large</td><td>trained</td><td><span class="pill future">Future</span></td></tr>
       <tr><td>9</td><td><b>Crisis/risk classifier (trained)</b></td><td>Purpose-built safety model</td><td>medium</td><td>trained</td><td><span class="pill future">Future</span></td></tr>
@@ -573,7 +575,18 @@ flowchart LR
       a clear notice; authoring patterns from conversations needs separate, explicit consent + de-identification before any
       human review. China's <b>PIPL</b> (cross-border transfer), <b>GDPR</b>, and special-category rules apply — <b>legal
       sign-off required before the flywheel or collaborative filtering runs.</b> Design consent + logging from day one.</li>
-    <li><b>Safety.</b> Crisis/self-harm detection with real escalation and resources is not optional.</li>
+    <li><b>Safety.</b> Crisis/self-harm detection with real escalation and resources is not optional.
+      <b>Built</b> in PLAN.md Feature 9: every message is screened before the reply is written, a positive signal
+      drops the retrieved guidance and suppresses the booking nudge, and the hotline numbers are application data
+      that never pass through a language model — a model asked for a hotline produces a plausible wrong one.</li>
+    <li><b>Where the consent constraint is knowingly deferred (decided 2026-08-29).</b> Conversations are already
+      stored in Postgres, crisis disclosures included, and there is <b>no consent notice yet</b> — so "design consent
+      + logging from day one" is not currently satisfied. This is a decision, not an oversight: PLAN.md
+      <b>Feature 24</b> puts the app on an unadvertised, <code>noindex</code> URL for a <b>single known reviewer who
+      is a co-owner</b>, which is not the situation the constraint above is written about. It becomes binding the
+      moment strangers can reach the site, and <b>Feature 21 AC 8 holds it</b> — along with the researcher sign-off
+      on the crisis resource list, which ships unreviewed for the same narrow reason. Neither may cross into the
+      public launch unresolved.</li>
     <li><b>Not a medical device.</b> The AI offers support and coping strategies, never diagnosis — and routes to humans beyond its scope.</li>
   </ul>
 

@@ -41,12 +41,14 @@ flowchart TD
     UI -->|HTTPS| API
     subgraph Backend["⚙️ Backend — Orchestration API (the brain)"]
         API["API Gateway + Auth<br/><i>login optional</i>"]
+        SAFE["Safety / Crisis Detection<br/><i>runs first · overrides the rest</i>"]
         ORCH["Chat Orchestrator"]
-        SAFE["Safety / Crisis Detection"]
         NUDGE["Booking-Nudge Engine<br/><i>readiness score</i>"]
+        CRISISOUT["Crisis resources<br/><i>no retrieval · no nudge</i>"]
     end
-    API --> ORCH
-    ORCH --> SAFE
+    API --> SAFE
+    SAFE -->|"crisis"| CRISISOUT
+    SAFE -->|"clear"| ORCH
     ORCH --> NUDGE
     subgraph AI["🤖 AI Layer — OpenAI (model-tiered for cost)"]
         EMB["Embeddings<br/>text-embedding-3-small"]
@@ -217,7 +219,7 @@ at our scale; pgvector handles tens of thousands of patterns comfortably, and we
 > the `pgvector/pgvector:pg16` image, and the migrations are plain SQL that port between them
 > unchanged. Supabase was already the assumed direction — the schema anticipates reconciling `users`
 > with its `auth.users` — so adopting it when the researcher admin tool needed hosting means the
-> final deployment inherits the work rather than repeating it. See PLAN.md Features 17 and 21.
+> final deployment inherits the work rather than repeating it. See PLAN.md Features 17, 24 and 21.
 
 **Care Pattern schema (v1):** `id/title` · `situation` (embedded → matching) · `signals` ·
 `strategies` (→ prompt) · `avoid` · `escalation` · `source_refs` (research-paper citations) ·
@@ -483,7 +485,7 @@ what *unlocks* the **Future = trained models (need accumulated data)**.
 | 3 | **Relevance-floor calibration** | Picks the cosine threshold from labeled data | small | analysis | 🟢 v1 |
 | 4 | **Product & funnel analytics** | Volume, languages, issue types, drop-off, AI→booking conversion | minimal | analysis / BI | 🟢 v1 |
 | 5 | **Care-Pattern gap analysis** | Finds situations with no good pattern to guide authoring | small | analysis | 🟢 v1 |
-| 6 | **Crisis-detection *evaluation*** | Measures recall of the (v1 LLM/rule-based) safety layer | small | analysis | 🟢 v1 |
+| 6 | **Crisis-detection *evaluation*** | Measures recall of the (v1 LLM/rule-based) safety layer. Started: `npm run safety:check` scores 25 labelled cases through the real screener, and `safety_events` records every trigger de-identified | small | analysis | 🟡 v1 |
 | 7 | **Re-ranker / cross-encoder** | Trained model on top of retrieval to beat raw cosine | med–large | **trained model** | 🔵 Future |
 | 8 | **Fine-tuned domain embeddings** | Better EN↔中文 clinical similarity | large | **trained model** | 🔵 Future |
 | 9 | **Crisis/risk classifier (trained)** | Purpose-built safety model, more reliable than LLM-only | medium | **trained model** | 🔵 Future |
@@ -538,6 +540,19 @@ Deferred until we have users, data, revenue, and governance in place.
   transfer), **GDPR** for EU students, and special-category-data rules all apply — **legal sign-off is
   required before the flywheel (or collaborative filtering) runs.** Design consent + logging from day one.
 - **Safety.** Crisis/self-harm detection with real escalation paths and crisis resources is not optional.
+  ✅ Built in PLAN.md Feature 9: every message is screened before the reply is written, a positive
+  signal drops the retrieved guidance and suppresses the booking nudge, and the hotline numbers are
+  application data that never pass through a language model — a model asked for a hotline produces a
+  plausible wrong one.
+
+> **Where the consent constraint is knowingly deferred (decided 2026-08-29).** Conversations are
+> already stored in Postgres, crisis disclosures included, and there is **no consent notice yet** —
+> so "design consent + logging from day one" is not currently satisfied. This is a decision, not an
+> oversight: PLAN.md **Feature 24** puts the app on an unadvertised, `noindex` URL for a **single
+> known reviewer who is a co-owner**, which is not the situation the constraint above is written
+> about. It becomes binding the moment strangers can reach the site, and **Feature 21 AC 8 holds
+> it** — along with the researcher sign-off on the crisis resource list, which ships unreviewed for
+> the same narrow reason. Neither may cross into the public launch unresolved.
 - **Not a medical device.** The AI offers support and coping strategies, never diagnosis — and routes to
   humans for anything beyond its scope.
 

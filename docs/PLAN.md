@@ -6,18 +6,31 @@
 
 ## How to use this plan
 - Work one feature at a time. A feature is **done** only when all its AC pass.
-- **Everything runs on `localhost`,** with one deliberate exception (below). Full deployment is the **last** feature.
+- **Everything runs on `localhost`** until Feature 24, with one earlier exception (below). *(Amended 2026-08-29: this plan originally deferred all deployment to Feature 21, the last feature. It no longer does — see Feature 24.)*
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, and Feature 23 was added mid-Phase-1 and sits between Features 9 and 10 where it will be built; the reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, Feature 23 was added mid-Phase-1 and has since moved to the head of Phase 2, and Feature 24 was added at the end of Phase 1 to put the site on a private URL early. The reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
-### The one exception to localhost-only (2026-08-15)
+### Going live in two steps, not one
+**Feature 24 (added 2026-08-29)** puts the student app on a real URL at the end of Phase 1, once
+Features 9 and 11 have landed. It is a **private preview**, not a launch: unadvertised and
+`noindex`, for the co-owner to test and screenshot for incubator applications. Cosmetic defects
+ship with it deliberately. The point is to stop three people working in series — the co-owner
+reviews, the researchers calibrate the Care Pattern library against real conversations, and building
+continues, all at once.
+
+**Feature 21 is then the public launch**, and is about opening the door to *strangers* rather than
+about deploying: removing the `noindex`, the privacy and consent obligations, the Login modal, and
+the rest of Feature 20's hardening.
+
+### The earlier exception to localhost-only (2026-08-15)
 A researcher joined to author the Care Pattern knowledge base, so **Feature 17's admin tool
 plus the database it writes to are hosted early** — see Feature 17 for the full reasoning.
 Scoped as narrowly as possible: the hosted service serves the admin UI and its API and
 nothing else. `POST /chat` is switched off there (`ENABLE_CHAT_ROUTES=false`), the student
 chat app stays on localhost, and the GitHub Pages prototype is untouched. Everything else
-in this plan is still built and verified locally, and Feature 21 still owns real deployment.
+in this plan is still built and verified locally until Feature 24 turns that endpoint back on
+behind a rate limit.
 
 ## Stack decisions (locked for V1)
 - **Frontend:** the existing React SPA (`inner-sun`), cleaned up and wired to our own backend.
@@ -273,6 +286,13 @@ The pattern's strategies are *"the calls are a lifeline, not a bad habit"*, *"a 
 
 This leaks nothing: someone guessing tokens can already see that no panel appeared, so the message tells them only what the screen told them. The verdict is judged against the token as it stood when the turn was *sent* (held in a ref), because unlocking mid-flight would otherwise report a rejection that never happened, and entering a new token clears the old verdict. The general point is worth keeping: **an observability surface that fails silently is worse than no observability surface**, because it converts "this is off" into "this found nothing", and those two readings lead somewhere very different.
 
+**It stays switched on in production** (decided 2026-08-29). It is not development scaffolding to
+be stripped at deployment: a live chat *hides* the thing that makes this product different, because
+a reply grounded in researcher-authored guidance looks like any other chatbot's, and the compare
+toggle is what shows the difference. Feature 24 AC 6 carries what that costs — a real
+`INSPECTOR_TOKEN` on the hosted API, a rate limit that does not throttle a demo, and a token treated
+as rotatable, since it grants read access to the Care Pattern library's titles, scores and guidance.
+
 **The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: ✅ Feature 8's prompt assembly and token budget (delivered — the panel now shows how many messages went in full versus were replaced by the summary, the summary text itself, every upstream call with its model and tokens, and what the turn and the conversation have cost), ✅ Feature 9's crisis detection (delivered — the panel now shows which detector fired, the category, the classifier's label, the rule ids, and an explicit line when a Care-Pattern match was overridden), and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
 
 **Not done here, on purpose:** the rows those later features will add, since the decisions they show do not exist yet.
@@ -413,9 +433,99 @@ the population being served.
   the inspector's call table, so Feature 8's model tiering stays legible rather than being quietly eroded
   by a new call.
 
+## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
+Answer common questions with zero LLM cost.
+**Depends on:** Feature 5.
+**AC:**
+1. A set of canned bilingual answers exists (e.g. "Is this confidential?", "How do I book a real counselor?", "Are you a real person?").
+2. These live in the `canned_responses` table — **not** cached, not LLM-generated. *(The "DB table optional" wording here is now settled: Feature 17 ships the editor for this table, so the content must be in the database rather than a config file.)*
+3. The chat UI shows **clickable quick-reply chips** that return the canned answer deterministically with no API call.
+4. Adding/editing a canned answer requires no model call and no matching logic.
+
+**Note:** the *authoring* half of this feature is delivered early by Feature 17, whose admin tool has a tab for `canned_responses`. What remains here is the student-facing half — surfacing the chips in the chat UI and returning the answer without an API call. Do not build a second editor.
+
+## Feature 11: Booking nudge + "talk to a human" path 🟢
+The whole point of the funnel: convert trust into a booking.
+**Depends on:** Features 5, 9.
+**AC:**
+1. A **rule-based readiness check** decides when to nudge (e.g. enough substantive turns, or the user explicitly asks for a human, or a pattern's `escalation` flag) — and it nudges **at most once** per conversation (no nagging).
+2. When triggered, the AI gently suggests booking a real counselor.
+3. A working **booking entry point** exists (v1 can be a simple request form or scheduling link — full payments are Future).
+4. The nudge never fires during an active crisis flow (that path takes over).
+5. The **Feature 22 inspector shows why a nudge fired** on the turn it fired — which part of the readiness check was satisfied (turn count, an explicit request, or a matched pattern's `escalation`), and why it stayed silent on the turns it did not. A rule-based decision that can only be inferred from the reply's wording cannot be tuned.
+
+---
+
+## Feature 24: Private preview — take the site online for the co-owner 🟢
+Put the student-facing app on a real URL that the co-owner can use on her own time, unsupervised,
+and screenshot for incubator applications. **Not public** — just not advertised. **Depends on:**
+Features 9, 11.
+
+**A deliberate slice of Features 20 and 21**, the same arrangement the Feature 17 hosting work used.
+It takes only what is needed to hand one person a working link, and leaves everything that exists
+for *strangers* in Feature 21: privacy and terms pages, the consent notice, the custom domain, and
+the fake Login modal.
+
+**Cosmetic defects are explicitly in scope to ship with** (decided 2026-08-29). The Login modal
+still collects a password and discards it, the team page is placeholder profiles, and `/privacy`
+and `/terms` are dead links. The reviewer knows the state of the product, so none of that blocks
+her, and fixing it would delay the thing that actually unblocks three people working in parallel.
+
+**Why now.** It unblocks work that is currently serial: the co-owner reviews and screenshots, the
+researchers calibrate the Care Pattern library against real conversations, and building continues —
+all at the same time, on the same deployed instance.
+
+**AC:**
+1. **`POST /chat` is rate limited** (a slice of Feature 20 AC 1). The one hard blocker: the endpoint
+   is unauthenticated and spends real OpenAI money, and being unadvertised is not a cost control.
+   Must leave headroom for a demo — see AC 5.
+2. **The student app is served from the same origin as the API**, exactly as the admin UI already is
+   at `/admin`. One URL, and CORS stops being a consideration. Note the CRA `homepage` field is set
+   to the GitHub Pages path and will need changing.
+3. **`ENABLE_CHAT_ROUTES=true`** on the Render instance, behind AC 1.
+4. **`noindex`** so the preview does not turn up in search results. This is what "private" means
+   here — there is no login, and there does not need to be one.
+5. **The retrieval inspector still works** (decided 2026-08-29 — see Feature 22). `INSPECTOR_TOKEN`
+   set as a real secret, AC 1's limiter not throttling a demo, and the comparison reply still
+   allowed. It is the thing that makes the differentiator visible in a screenshot: a live chat hides
+   the fact that a reply is grounded in researcher-authored guidance. Treat the token as rotatable —
+   it grants read access to the Care Pattern library's titles, scores and guidance text.
+6. **A smoke test passes against the deployed instance**, not localhost: chat → Care-Pattern match →
+   crisis path → booking entry point → both languages.
+
+**Scheduled immediately after this feature goes up — reminders, not blockers:**
+- **The crisis resource list gets a researcher's review** (the outstanding item from Feature 9,
+  `services/api/src/crisis-resources.ts`). It ships unreviewed because the reviewer is a co-owner
+  who knows it, but it must not still be unreviewed when strangers arrive in Feature 21.
+- **The Care Pattern library gets recalibrated** against the conversations the preview produces.
+  `npm run retrieval:calibrate` currently runs 18 cases written by hand against the starter set;
+  real traffic is better material, and it is also what Feature 23 needs for its multi-turn cases.
+
+**Do not re-provision what already exists.** Supabase and Render are up, migrations run against
+them, and [`DEPLOYMENT.md`](DEPLOYMENT.md) documents redeploy and rollback. Read `render.yaml`
+first. The free Render instance sleeps when idle, so the first load after a quiet period takes
+roughly 50 seconds — worth warning the reviewer about rather than having her read it as a bug.
+
+**Budget.** A conversation was measured at **$0.034–0.042** end to end, so this costs a few dollars.
+The exposure without AC 1 is unbounded, which is the whole argument for it being the gate.
+
+---
+
+# Phase 2 — Users, memory & languages
+
 ## Feature 23: A working formulation that survives a turn 🟢
 Stop the match flapping at the relevance floor, and give every student a head start.
-**Depends on:** Feature 7. **Build after Feature 9** — crisis detection is non-negotiable and should not wait behind a matching refinement — and **before Feature 13**, which inherits the seeding design.
+**Depends on:** Feature 7. **Build first in Phase 2, and before Feature 13**, which inherits the seeding design.
+
+**Why it waits for the public beta rather than preceding it (decided 2026-08-29).** This feature is
+gated on two thresholds that the plan insists must be *measured*, and the release threshold and the
+two-turn rule need **multi-turn** labelled cases — which `npm run retrieval:calibrate`'s 18
+single-turn cases cannot supply. Real tester conversations are exactly that material. Deferring this
+past Feature 24 therefore makes the feature better rather than merely later: the alternative is
+inventing multi-turn cases and calibrating against our own guesses, which is the failure this
+project has already been bitten by once (ARCHITECTURE.md's unmeasured "start around 0.7–0.8" floor
+would have rejected every correct match, silently). Nothing in the beta depends on it — a pattern
+flapping at the boundary produces a slightly less consistent reply, not a broken one.
 
 Today every turn is matched from scratch and the applied patterns are discarded the moment the next message arrives. Measured consequence, from a real conversation: a student asked a follow-up *about* their homesickness and the pattern scored **0.5154** against a 0.54 floor. The guidance was dropped over **0.025**, on a turn where the subject had not changed at all. A fixed threshold flaps at its boundary, and a student does not experience their situation as ending because one sentence scored lower.
 
@@ -446,31 +556,6 @@ Today every turn is matched from scratch and the applied patterns are discarded 
 **An open question worth measuring here, not guessing.** `CARE_PATTERN_TOP_N` is 3, chosen in Feature 7 without measuring *reply* quality against it — the calibration measured matching, not blending. Three simultaneous patterns may already be too many for one warm reply, and 2 may be the practical maximum. This feature has the multi-turn harness to find out.
 
 **Not done here, on purpose:** the questionnaire itself (Feature 13), the chips the anonymous seed is taken from (Feature 10), and re-ranking the vector top-N with an LLM, which remains the *Future* hybrid design.
-
-## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
-Answer common questions with zero LLM cost.
-**Depends on:** Feature 5.
-**AC:**
-1. A set of canned bilingual answers exists (e.g. "Is this confidential?", "How do I book a real counselor?", "Are you a real person?").
-2. These live in the `canned_responses` table — **not** cached, not LLM-generated. *(The "DB table optional" wording here is now settled: Feature 17 ships the editor for this table, so the content must be in the database rather than a config file.)*
-3. The chat UI shows **clickable quick-reply chips** that return the canned answer deterministically with no API call.
-4. Adding/editing a canned answer requires no model call and no matching logic.
-
-**Note:** the *authoring* half of this feature is delivered early by Feature 17, whose admin tool has a tab for `canned_responses`. What remains here is the student-facing half — surfacing the chips in the chat UI and returning the answer without an API call. Do not build a second editor.
-
-## Feature 11: Booking nudge + "talk to a human" path 🟢
-The whole point of the funnel: convert trust into a booking.
-**Depends on:** Features 5, 9.
-**AC:**
-1. A **rule-based readiness check** decides when to nudge (e.g. enough substantive turns, or the user explicitly asks for a human, or a pattern's `escalation` flag) — and it nudges **at most once** per conversation (no nagging).
-2. When triggered, the AI gently suggests booking a real counselor.
-3. A working **booking entry point** exists (v1 can be a simple request form or scheduling link — full payments are Future).
-4. The nudge never fires during an active crisis flow (that path takes over).
-5. The **Feature 22 inspector shows why a nudge fired** on the turn it fired — which part of the readiness check was satisfied (turn count, an explicit request, or a matched pattern's `escalation`), and why it stayed silent on the turns it did not. A rule-based decision that can only be inferred from the reply's wording cannot be tuned.
-
----
-
-# Phase 2 — Users, memory & languages
 
 ## Feature 12: Authentication (anonymous vs registered) 🟢
 **Depends on:** Features 3, 4.
@@ -608,7 +693,7 @@ Make it credible for investors and users.
 ## Feature 20: Hardening 🟢
 **Depends on:** all core features.
 **AC:**
-1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed). *(Partly in place already: `@fastify/rate-limit` is registered opt-in — global off — and applied to the credential-checking routes, the admin login and password change and the Feature 22 `GET /inspect` check, at 10 per 15 minutes. What remains is `POST /chat` itself, which is the expensive one and the reason `ENABLE_CHAT_ROUTES` is off on the hosted instance until this lands.)*
+1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed). *(Partly in place already: `@fastify/rate-limit` is registered opt-in — global off — and applied to the credential-checking routes, the admin login and password change and the Feature 22 `GET /inspect` check, at 10 per 15 minutes. What remains is `POST /chat` itself, which is the expensive one and the reason `ENABLE_CHAT_ROUTES` is off on the hosted instance until this lands. **AC 1 is taken by Feature 24**, which cannot go live without it; the rest of this feature stays here.)*
 2. Input validation and safe error handling across the API.
 3. Secrets managed via env/secret store; no secrets in code or client.
 4. Automated tests for the critical paths (matching, safety screening, auth).
@@ -634,18 +719,51 @@ Not urgent while the contract is three fields, and riskier from Feature 13 (ques
 
 # Phase 4 — Ship (last step)
 
-## Feature 21: Deployment to production hosting 🟢 (do this last)
+## Feature 21: Public launch 🟢 (do this last)
 **Depends on:** everything above.
+
+**Most of the deployment itself is done before this feature is reached.** Feature 17's hosting slice
+provisioned Supabase, ran the migrations and documented rollback; **Feature 24 then deployed the
+student app same-origin and turned `POST /chat` back on behind a rate limit.** So AC 1, 2 and 5 are
+already met by the time this starts, and AC 4 has been rehearsed. What is genuinely left is the work
+of opening the door to **strangers** rather than to one known reviewer — which is a different job
+from deploying, and is why this feature still exists.
+
 **AC:**
-1. Frontend + backend deployed **on the same platform/domain** → same-origin API, simpler auth cookies.
-2. Managed Postgres (**Supabase**, provisioned early — see below) with migrations run and env/secrets configured.
-3. Custom domain + HTTPS (e.g. `app.innersun.com`); optional: keep GitHub Pages for a static marketing page.
-4. A smoke test passes in production: register → chat → match → safety → nudge → (bilingual) all work.
-5. Rollback/redeploy process documented.
+1. ✅ *(delivered by Feature 24)* Frontend + backend deployed **on the same platform/domain** →
+   same-origin API, simpler auth cookies.
+2. ✅ *(delivered by the Feature 17 hosting slice)* Managed Postgres (**Supabase**) with migrations
+   run and env/secrets configured.
+3. Custom domain + HTTPS (e.g. `app.innersun.com`); optional: keep GitHub Pages for a static
+   marketing page.
+4. A smoke test passes in production: register → chat → match → safety → nudge → (bilingual) all
+   work. *(Feature 24 covers all of this except `register`, which needs Feature 12.)*
+5. ✅ *(delivered by the Feature 17 hosting slice)* Rollback/redeploy process documented.
+6. **The `noindex` from Feature 24 AC 4 is removed** — this is the moment the site stops being
+   private, and it is one line that is very easy to leave in place by accident.
+7. **The defects Feature 24 deliberately shipped with are fixed**, because they were acceptable for
+   a co-owner and are not acceptable for a stranger:
+   - The **Login modal** collects an email and a password and discards them. Either wire it to
+     Feature 12 or remove the button. People reuse passwords; this one is not cosmetic.
+   - **`/privacy` and `/terms`** are dead `<a href>` links to routes that do not exist and do not
+     even resolve under `HashRouter`. Both need real pages.
+   - The **team page** is placeholder profiles, labelled as sample content.
+8. **A consent notice covering anonymous logging** is live (Feature 16 AC 1). Conversations, crisis
+   disclosures included, are stored in Postgres, and a stranger has to be told that before they type.
+9. **The crisis resource list has been signed off by a researcher** — flagged in Feature 9, scheduled
+   right after Feature 24, and a hard blocker here.
+10. **Feature 20's remaining hardening is in place** — automated tests on the critical paths, CI, and
+    abuse protection sized for public traffic rather than for one reviewer.
 
-**Substantially pre-built by the Feature 17 hosting slice.** That slice provisions Supabase, runs the migrations against it, stands the API up on Render, and documents redeploy and rollback in [`DEPLOYMENT.md`](DEPLOYMENT.md) — so **AC 2 and AC 5 arrive early**, and AC 1 gets a rehearsal, since the admin UI is already served by the API at the same origin. The platform-readiness work is done too: `PORT`/`0.0.0.0` binding, `trustProxy`, database TLS, and a session cookie whose `Secure` flag does not depend on `NODE_ENV`.
+**Do not re-provision what already exists** — check Supabase and Render first, and read
+`render.yaml` before writing new deployment config. The platform-readiness work is long done:
+`PORT`/`0.0.0.0` binding, `trustProxy`, database TLS, and a session cookie whose `Secure` flag does
+not depend on `NODE_ENV`.
 
-What genuinely remains: deploying the **student-facing app**, turning `POST /chat` back on (`ENABLE_CHAT_ROUTES=true`) behind the rate limiting and abuse protection Feature 20 adds, the custom domain, and the full smoke test. **Do not re-provision what already exists** — check Supabase and Render first, and read `render.yaml` before writing new deployment config.
+**Treat this as a checklist against what the private preview actually taught us**, not as a fresh
+deployment. By the time it is reached the app has been running publicly-reachable for weeks, and the
+interesting questions are the ones the preview raised — where the rate limit sat, what the Care
+Pattern calibration showed against real conversations, and whether the crisis path behaved.
 
 **One decision to revisit here:** the student app will need `WEB_ORIGIN` set for CORS, or — better, and what Feature 21 AC 1 actually asks for — it should be served from the same origin as the API, exactly as the admin UI already is, at which point CORS stops being a consideration at all.
 
