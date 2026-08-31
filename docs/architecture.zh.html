@@ -128,12 +128,14 @@ flowchart TD
     UI -->|HTTPS| API
     subgraph Backend["⚙️ 后端 (Backend) — 编排 API (Orchestration API)"]
         API["API 网关 + 鉴权<br/><i>登录可选</i>"]
+        SAFE["安全 / 危机检测 (Crisis Detection)<br/><i>最先运行 · 覆盖其余流程</i>"]
         ORCH["对话编排器 (Orchestrator)"]
-        SAFE["安全 / 危机检测 (Crisis Detection)"]
         NUDGE["预约引导引擎<br/><i>意愿评分 (readiness score)</i>"]
+        CRISISOUT["危机求助资源<br/><i>不检索 · 不引导预约</i>"]
     end
-    API --> ORCH
-    ORCH --> SAFE
+    API --> SAFE
+    SAFE -->|"危机"| CRISISOUT
+    SAFE -->|"正常"| ORCH
     ORCH --> NUDGE
     subgraph AI["🤖 AI 层 — OpenAI (按模型分级控本)"]
         EMB["向量嵌入 (embeddings)<br/>text-embedding-3-small"]
@@ -477,7 +479,7 @@ flowchart LR
       <tr><td>3</td><td><b>相关性下限标定</b></td><td>用标注数据选出余弦阈值</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
       <tr><td>4</td><td><b>产品与漏斗分析</b></td><td>访问量、语言、议题类型、转化</td><td>极少</td><td>分析 / BI</td><td><span class="pill v1">v1</span></td></tr>
       <tr><td>5</td><td><b>关怀模式缺口分析</b></td><td>找出没有合适模式的情境</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
-      <tr><td>6</td><td><b>危机检测评估</b></td><td>衡量安全层的召回率</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
+      <tr><td>6</td><td><b>危机检测评估</b></td><td>衡量安全层的召回率。已起步：<code>npm run safety:check</code> 用 25 个标注样例跑真实的筛查模块，<code>safety_events</code> 去标识化地记录每一次触发</td><td>少量</td><td>分析</td><td><span class="pill v1">v1</span></td></tr>
       <tr><td>7</td><td><b>重排序器 / 交叉编码器 (re-ranker)</b></td><td>在检索之上训练模型，胜过纯余弦</td><td>中–大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
       <tr><td>8</td><td><b>微调领域嵌入</b></td><td>更好的中英临床相似度</td><td>大</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
       <tr><td>9</td><td><b>危机/风险分类器（训练）</b></td><td>专门构建的安全模型</td><td>中</td><td>训练模型</td><td><span class="pill future">未来</span></td></tr>
@@ -516,7 +518,15 @@ flowchart LR
     <li><b>隐私与同意。</b>敏感的心理健康数据，且很多来自中国公民。匿名日志需要清晰的告知；用对话来撰写模式需要单独、明确的同意
       + 在任何人工查看前完成去标识化。中国的 <b>PIPL</b>（尤其跨境传输）、<b>GDPR</b> 及特殊类别数据规则都适用——
       <b>在数据飞轮或协同过滤运行前，必须获得法务放行。</b>从第一天起就设计好同意与日志。</li>
-    <li><b>安全。</b>带真实升级路径与资源的危机/自伤检测不是可选项。</li>
+    <li><b>安全。</b>带真实升级路径与资源的危机/自伤检测不是可选项。<b>已建成</b>——见 PLAN.md 的 Feature 9：
+      每一条消息在生成回复之前都会被筛查，一旦命中，检索到的关怀模式指导会被丢弃、预约引导被抑制；而热线号码是
+      应用层的数据，绝不经过语言模型——让模型「给个热线」得到的往往是一个看起来很像、其实是错的号码。</li>
+    <li><b>关于「同意」这条约束被明知地推后（2026-08-29 决定）。</b>对话（含危机倾诉）已经存进 Postgres，
+      而目前<b>还没有任何同意提示</b>——也就是说「从第一天就设计好同意与日志」这一条现在并不成立。这是一个决定，
+      而非疏漏：PLAN.md 的 <b>Feature 24</b> 只是把应用放在一个不对外公布、带 <code>noindex</code> 的地址上，
+      供<b>一位知情的联合创始人</b>试用，这并不是上面那条约束所针对的情形。一旦陌生人能访问该站点，这条约束立刻生效，
+      并由 <b>Feature 21 的 AC 8</b> 把关——危机求助资源清单的研究员签核同理，它出于同样狭窄的理由未经审核就先上线。
+      两者都不得带着未解决的状态进入公开发布。</li>
     <li><b>不是医疗器械。</b>AI 提供支持与应对策略，绝不做诊断——超出其能力范围就转给真人。</li>
   </ul>
 
