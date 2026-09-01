@@ -54,3 +54,33 @@ export async function recordSafetyEvent(
     log.error({ err, conversationId: event.conversationId }, "failed to record safety event");
   }
 }
+
+/**
+ * Has this conversation EVER triggered crisis screening? (Feature 11 AC 4.)
+ *
+ * Screening itself is per-turn — a deliberate Feature 9 decision, so that a student who says
+ * "thanks, I'm okay now" is not handed the hotline panel again on every subsequent turn. But
+ * the booking nudge needs the opposite reading of the same history: a disclosure on turn 4
+ * does not stop mattering on turn 6, and a rule that had simply counted to six would otherwise
+ * invite that student to book an appointment next week. So the nudge asks this table, which is
+ * already the durable record of exactly that.
+ *
+ * Asked only on the turns where an automatic nudge would otherwise fire — at most once per
+ * conversation — so it costs nothing on an ordinary turn. A query that fails answers `true`:
+ * the conservative direction is to stay quiet, and losing one booking nudge is a far smaller
+ * failure than nudging somebody in the middle of a crisis.
+ */
+export async function conversationHadCrisis(
+  conversationId: string,
+  log: { error: (obj: object, msg: string) => void },
+): Promise<boolean> {
+  try {
+    const { rowCount } = await pool.query(`select 1 from safety_events where conversation_id = $1 limit 1`, [
+      conversationId,
+    ]);
+    return (rowCount ?? 0) > 0;
+  } catch (err) {
+    log.error({ err, conversationId }, "could not check safety history — suppressing the booking nudge");
+    return true;
+  }
+}

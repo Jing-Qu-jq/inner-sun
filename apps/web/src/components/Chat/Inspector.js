@@ -17,7 +17,9 @@ import { checkInspectorToken, clearInspectorToken, setInspectorToken } from '../
  * closely, which of them cleared the relevance floor, and the guidance that was injected
  * into the prompt as a result. Feature 9 added the decision that outranks all of that —
  * whether the turn was screened as a crisis, by what, and whether a match was dropped
- * because of it. Feature 8 added the other half of the same question — how
+ * because of it. Feature 11 added the last decision a turn makes — whether this was the one
+ * turn that invites the student to book a real counselor, and, on every turn that did not,
+ * what it was still waiting for. Feature 8 added the other half of the same question — how
  * the prompt was assembled, how much of a long conversation was summarized rather than
  * resent, every upstream call the turn made, and what the turn and the conversation have
  * cost so far. Rendered only for a viewer holding the inspector token —
@@ -158,6 +160,7 @@ export function InspectorPanel({ debug, reply }) {
     const top = debug.candidates?.[0];
     const applied = debug.candidates?.filter((c) => c.applied) ?? [];
     const safety = debug.safety;
+    const booking = debug.booking;
 
     // Three readings, not two. "Nothing matched" and "something matched and was withheld"
     // are different facts, and on a crisis turn the second one is true while the candidate
@@ -183,6 +186,13 @@ export function InspectorPanel({ debug, reply }) {
             {debug.turnCostUsd !== undefined && (
                 <Badge bg="light" text="dark" className="ms-1 border">
                     {usdText(debug.turnCostUsd)}
+                </Badge>
+            )}
+            {/* The funnel's one moment. Green rather than the usual grey because on the turn it
+                fires this is the most consequential thing that happened, and it happens once. */}
+            {booking?.nudged && (
+                <Badge bg="success" className="ms-1">
+                    {t('inspector.bookingNudged')}
                 </Badge>
             )}
             {debug.prompt?.summarizedThisTurn && (
@@ -232,6 +242,54 @@ export function InspectorPanel({ debug, reply }) {
                                     </dd>
                                     <dt className="col-6">{t('inspector.safetyMs')}</dt>
                                     <dd className="col-6">{safety.durationMs} ms</dd>
+                                </dl>
+                            </>
+                        )}
+
+                        {/* The booking readiness check (Feature 11 AC 5). Shown on every turn,
+                            because the useful question is nearly always the negative one: how
+                            far along is this conversation, and what is it still short of? A
+                            rule that can only be read off the reply's wording cannot be tuned. */}
+                        {booking && (
+                            <>
+                                <div className="fw-semibold">{t('inspector.booking')}</div>
+                                <dl className="row mb-2">
+                                    <dt className="col-6">{t('inspector.bookingSignal')}</dt>
+                                    <dd className="col-6">
+                                        <code>{booking.signal}</code>
+                                    </dd>
+                                    {booking.suppressedBy && (
+                                        <>
+                                            <dt className="col-6">{t('inspector.bookingSuppressed')}</dt>
+                                            <dd className="col-6">
+                                                <code>{booking.suppressedBy}</code>
+                                            </dd>
+                                        </>
+                                    )}
+                                    <dt className="col-6">{t('inspector.bookingTurns')}</dt>
+                                    <dd className="col-6">
+                                        {intText(booking.substantiveTurns)} / {intText(booking.requiredTurns)}
+                                    </dd>
+                                    {booking.escalationPattern && (
+                                        <>
+                                            <dt className="col-6">{t('inspector.bookingEscalation')}</dt>
+                                            <dd className="col-6">{booking.escalationPattern}</dd>
+                                        </>
+                                    )}
+                                    <dt className="col-6">{t('inspector.bookingRules')}</dt>
+                                    <dd className="col-6">
+                                        {booking.rules?.length > 0
+                                            ? booking.rules.map((rule) => (
+                                                  <div key={rule}>
+                                                      <code>{rule}</code>
+                                                  </div>
+                                              ))
+                                            : t('inspector.safetyNoRules')}
+                                    </dd>
+                                    <dt className="col-6">{t('inspector.bookingAlready')}</dt>
+                                    <dd className="col-6">
+                                        {t(booking.alreadyNudged ? 'inspector.yes' : 'inspector.no')}
+                                    </dd>
                                 </dl>
                             </>
                         )}

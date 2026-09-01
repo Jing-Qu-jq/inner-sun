@@ -43,7 +43,7 @@ flowchart TD
         API["API Gateway + Auth<br/><i>login optional</i>"]
         SAFE["Safety / Crisis Detection<br/><i>runs first · overrides the rest</i>"]
         ORCH["Chat Orchestrator"]
-        NUDGE["Booking-Nudge Engine<br/><i>readiness score</i>"]
+        NUDGE["Booking-Nudge Engine<br/><i>rules · once per conversation</i>"]
         CRISISOUT["Crisis resources<br/><i>no retrieval · no nudge</i>"]
     end
     API --> SAFE
@@ -65,7 +65,7 @@ flowchart TD
     subgraph Human["💳 Human Funnel — where revenue is made"]
         BOOK["Booking / Scheduling"]
     end
-    NUDGE --> BOOK
+    NUDGE -->|"scheduling link"| BOOK
 
     %% ---- Future (v2+) ----
     SEM["Semantic cache"]
@@ -125,26 +125,29 @@ flowchart TD
     Floor -->|"No"| General["General empathetic mode<br/>+ flag: Care-Pattern gap"]
     Floor -->|"Yes"| Strat["Inject matched<br/>Care-Pattern strategies"]
 
-    GeneralEarly --> Build
-    General --> Build
-    Strat --> Build["Assemble prompt:<br/>system + history + turn directive"]
-    Crisis --> Build
+    GeneralEarly --> NudgeChk
+    General --> NudgeChk
+    Strat --> NudgeChk{"Ready to nudge?<br/>asked · escalation · turns"}
+    NudgeChk -->|"Yes · once only"| Nudge["Claim the nudge<br/>+ add the invitation"]
+    NudgeChk -->|"No"| Build
+    Nudge --> Build
+    Crisis --> Build["Assemble prompt:<br/>system + history + turn directive"]
     Build --> Gen["gpt-4o writes the reply"]
 
     Gen --> CrisisOut{"Was it a<br/>crisis turn?"}
     CrisisOut -->|"Yes"| Res["Attach crisis resources<br/>+ de-identified safety event"]
-    CrisisOut -->|"No"| NudgeChk{"Readiness score ≥<br/>threshold, or asked?"}
-    NudgeChk -->|"Yes"| Nudge["Gently suggest booking<br/>a real counselor"]
-    NudgeChk -->|"No"| Reply
+    CrisisOut -->|"No"| Link{"Did it nudge?"}
+    Link -->|"Yes"| Book["Attach the booking link<br/><i>from config, never from the model</i>"]
+    Link -->|"No"| Reply
 
     Res --> Reply(["Reply to user"])
-    Nudge --> Reply
+    Book --> Reply
     Canned --> Reply
     Reply --> LogStep["Log if consented<br/><i>de-identified</i>"]
 
     classDef decision fill:#fff3e0,stroke:#e08600,color:#5a3b00;
     classDef danger fill:#fdeef3,stroke:#d6336c,color:#7a1138;
-    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut decision;
+    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut,Link decision;
     class Crisis,Res danger;
 ```
 
@@ -174,6 +177,21 @@ pass through a language model: they are appended by the application, because a m
 produces a plausible wrong one. When the lexicon settles the turn, retrieval is not dispatched at all. A
 classifier that fails does **not** escalate the turn — failing closed would put hotlines in front of
 ordinary conversations on every upstream hiccup — and the failure is logged as a degraded safety layer.
+
+**The booking nudge is rules, not a score** (Feature 11). Three signals decide it, read in order: the
+student **asked** for a human (a phrase lexicon in English and Chinese), the closest matched pattern
+**carries escalation guidance** and the conversation has a few substantive turns behind it, or **turn
+count** alone. It fires **at most once per conversation**, enforced by an atomic claim on
+`conversations.booking_nudged_at` rather than by asking the model to remember. The model writes the
+invitation in its own words; the **destination is application configuration** (`BOOKING_URL`) and never
+passes through it, for the same reason the hotline numbers do not. The home page's "Talk to a human"
+button takes the same link from a small public `GET /public-config` rather than a build-time copy, so
+that button and the nudge inside the chat can never point at different places. A crisis turn never
+nudges — and
+neither does any later turn of a conversation that has *ever* been in crisis, unless the student asks,
+because screening is per-turn and "I'm okay now" is not evidence that the moment has passed. Weighted
+readiness scoring stays in §9: there is no conversion data to weight against yet, and the thresholds in
+force today are chosen rather than measured.
 
 ---
 
@@ -364,13 +382,20 @@ Some questions never need an LLM: "Is this confidential?", "How do I book a real
 them, but canned answers are *authored constants*: there's nothing to recompute, so nothing to cache.
 Just store them directly:
 
-- **v1 — an i18n / config file in the codebase.** Versioned, zero infra, slots into the EN/中文 message
-  catalog. Best when engineers own the content.
-- **Later — a `canned_responses` DB table.** Move here when researchers/PM need to edit answers *without*
-  a code deploy.
+**Where they live is settled: the `canned_responses` table.** This section once offered a choice — an
+i18n file in the codebase for v1, a database table "later, when non-engineers need to edit without a
+deploy". Feature 17 answered it early by shipping the editor for that table, so the content is in the
+database now and a config file would be a second, unreviewable copy of it.
 
 **Best UX:** surface them as **clickable quick-reply chips**. Each chip maps deterministically to its
 answer — no LLM call, no matching logic, and zero cost.
+
+**"How do I book a real counselor?" answers itself, link included.** The chip returns its canned text
+*and* the booking card, taking the URL from `GET /public-config` — so the whole exchange costs nothing
+upstream. That question routed through the model produces a warm, empty reply, because on the first turn
+there is no conversation to be contextual about. A student who *types* the same question mid-conversation
+still goes through the pipeline and gets Feature 11's contextual nudge: the deterministic path is the
+chip, not the phrase.
 
 ---
 

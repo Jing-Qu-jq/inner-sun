@@ -6,7 +6,7 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
-import type { ApiError, HealthResponse } from "@innersun/shared";
+import type { ApiError, HealthResponse, PublicConfig } from "@innersun/shared";
 import { config, isProduction, validateConfig } from "./config.js";
 import { isDbReachable, pool } from "./db.js";
 import { isAppError } from "./errors.js";
@@ -15,6 +15,7 @@ import { registerAdminFaqRoutes } from "./routes/admin-faq.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { logRetrievalReadiness } from "./retrieval.js";
 import { logSafetyReadiness } from "./safety.js";
+import { logBookingReadiness } from "./booking.js";
 import { logCostControls } from "./usage.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -88,6 +89,33 @@ export function buildServer() {
   // researcher saving twenty patterns in a burst is never throttled for it.
   app.register(rateLimit, { global: false });
 
+  /**
+   * Public, unauthenticated configuration the browser needs before it has anything to send
+   * (Feature 11).
+   *
+   * Only one field so far: where a student goes to book a real counselor. The chat page gets
+   * that link attached to the turn that nudges, because the server is what decided to nudge —
+   * but the home page's "Talk to a human" button has no turn to ride on and still has to lead
+   * somewhere real. Serving it from here rather than baking a second copy into `REACT_APP_*`
+   * keeps ONE source of truth: a link that changes changes in one place, and a static build
+   * cannot go stale against the running API.
+   *
+   * Everything here is public by construction — a scheduling link is meant to be handed out.
+   * Nothing that is secret, per-user, or expensive to compute may be added to this response;
+   * the inspector's payload deliberately went the other way, gated behind a credential on the
+   * one endpoint that already knew who was asking.
+   *
+   * Registered outside `enableChatRoutes` because it is app configuration rather than a chat
+   * feature, and because a booking link is exactly the sort of thing an instance with chat
+   * switched off might still want to hand out.
+   */
+  app.get("/public-config", async (): Promise<PublicConfig> => {
+    // Absent rather than empty when unset, so the client's check is "is there a link?" and
+    // not "is the link the empty string?" — the same shape as `crisis` and `booking` on a
+    // chat response, and the same reason: presence is the signal.
+    return config.booking.url ? { bookingUrl: config.booking.url } : {};
+  });
+
   // Health check — confirms the service is up and reports DB connectivity (Feature 3).
   app.get("/health", async (): Promise<HealthResponse> => {
     const db = (await isDbReachable()) ? "up" : "down";
@@ -113,6 +141,10 @@ export function buildServer() {
       // that failed to load or a classifier prompt missing from dist/ produces a service
       // that answers every message beautifully and screens none of them.
       logSafetyReadiness(app.log);
+      // And the Feature 11 funnel. Its silent failure is the mirror image of the safety
+      // layer's: with BOOKING_URL unset the service builds trust exactly as designed and
+      // then never once asks the question the business depends on.
+      logBookingReadiness(app.log);
     });
   } else {
     app.log.warn("POST /chat is disabled (ENABLE_CHAT_ROUTES=false) — admin-only instance");

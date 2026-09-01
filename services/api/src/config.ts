@@ -151,6 +151,55 @@ export const config = {
   },
 
   /**
+   * The booking nudge and the human hand-off (Feature 11).
+   *
+   * The readiness check is deliberately rule-based and stateless — no model call, no score.
+   * These are the numbers it reads, and every one of them is **chosen rather than measured**,
+   * which is the honest description and is why they are configuration rather than constants.
+   * What would measure them is conversion data, and that arrives with Feature 19. Until then
+   * they are a starting point that a researcher can move without a deploy.
+   */
+  booking: {
+    /**
+     * Where a student goes to book a real counselor. A scheduling link — Calendly, Cal.com,
+     * a university booking page — supplied by configuration because it belongs to the
+     * practice, not to this codebase.
+     *
+     * UNSET MEANS THE NUDGE IS SWITCHED OFF, and that is deliberate rather than a
+     * degradation. Feature 9 established that a hotline number must never be invented,
+     * and a booking link is the same category of promise: nudging a student toward a
+     * counselor and then handing them nowhere to go is worse than not asking. So there is
+     * no default and no placeholder — with this unset the readiness check reports
+     * `disabled` on every turn and the startup log says so.
+     */
+    url: process.env.BOOKING_URL || undefined,
+    /**
+     * Substantive student messages required before the nudge fires on turn count alone.
+     *
+     * "Substantive" is the guard that matters more than the number: six exchanges of "ok",
+     * "yeah", "thanks" are not a conversation that has earned an invitation to book someone.
+     */
+    minStudentTurns: Number(optional("BOOKING_MIN_STUDENT_TURNS", "6")),
+    /**
+     * The lower bar that applies when a matched Care Pattern carries escalation guidance.
+     *
+     * Lower because the evidence is better: the library recognized the situation, and the
+     * researcher who authored that pattern wrote down when it warrants a human. Turn count
+     * on its own is a proxy for the same thing with none of the clinical content behind it.
+     */
+    escalationMinStudentTurns: Number(optional("BOOKING_ESCALATION_MIN_STUDENT_TURNS", "3")),
+    /**
+     * How many characters a student message needs before it counts as substantive.
+     *
+     * Distinct from `retrieval.minSignalChars` (12), which asks a different question — that
+     * one is a cost guard on "is there anything here to match at all?", this one is "has
+     * this person actually told us something?". A reply of "ok thanks" is 9 characters and
+     * a real disclosure is rarely under thirty.
+     */
+    minTurnChars: Number(optional("BOOKING_MIN_TURN_CHARS", "30")),
+  },
+
+  /**
    * Unlocks the retrieval inspector on the chat page (Feature 22).
    *
    * Unset means the inspector does not exist: no debug payload is built and a response is
@@ -256,6 +305,41 @@ export function validateConfig(): string[] {
   }
   if (!Number.isFinite(config.openai.timeoutMs) || config.openai.timeoutMs <= 0) {
     problems.push(`OPENAI_TIMEOUT_MS must be a positive number: ${process.env.OPENAI_TIMEOUT_MS}`);
+  }
+
+  // The booking nudge (Feature 11). Every one of these is a count of messages or characters,
+  // so a fractional or negative value is not a stricter setting but a broken one — and each
+  // fails silently in the direction that is hardest to notice: a nudge that never fires looks
+  // exactly like a product whose students are never ready.
+  const { minStudentTurns, escalationMinStudentTurns, minTurnChars } = config.booking;
+  if (!Number.isInteger(minStudentTurns) || minStudentTurns <= 0) {
+    problems.push(`BOOKING_MIN_STUDENT_TURNS must be a positive whole number: ${process.env.BOOKING_MIN_STUDENT_TURNS}`);
+  }
+  if (!Number.isInteger(escalationMinStudentTurns) || escalationMinStudentTurns <= 0) {
+    problems.push(
+      `BOOKING_ESCALATION_MIN_STUDENT_TURNS must be a positive whole number: ${process.env.BOOKING_ESCALATION_MIN_STUDENT_TURNS}`,
+    );
+  }
+  if (!Number.isFinite(minTurnChars) || minTurnChars < 0) {
+    problems.push(`BOOKING_MIN_TURN_CHARS must be zero or a positive number: ${process.env.BOOKING_MIN_TURN_CHARS}`);
+  }
+  // A malformed booking URL is refused rather than shipped. Unset is a supported state — the
+  // nudge is simply off — but a value that is present and wrong ends with a student clicking
+  // a broken link at the exact moment they decided to ask for help, which is the single worst
+  // place in this product for a silent failure.
+  if (config.booking.url !== undefined) {
+    let parsed: URL | undefined;
+    try {
+      parsed = new URL(config.booking.url);
+    } catch {
+      parsed = undefined;
+    }
+    if (!parsed || (parsed.protocol !== "https:" && parsed.protocol !== "http:")) {
+      problems.push(
+        `BOOKING_URL must be an absolute http(s) URL: ${config.booking.url}. ` +
+          "Leave it unset to switch the booking nudge off entirely.",
+      );
+    }
   }
 
   // A floor outside 0-1 is not a stricter setting, it is a broken one: above 1 nothing can

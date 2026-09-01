@@ -28,4 +28,6 @@ matched closely enough** — answer generally and warmly, and do not invent clin
 {{care_pattern_strategies}}
 --- END CARE PATTERN GUIDANCE ---
 
+{{booking_nudge}}
+
 Now reply to the student's next message.

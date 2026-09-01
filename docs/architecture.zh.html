@@ -130,7 +130,7 @@ flowchart TD
         API["API 网关 + 鉴权<br/><i>登录可选</i>"]
         SAFE["安全 / 危机检测 (Crisis Detection)<br/><i>最先运行 · 覆盖其余流程</i>"]
         ORCH["对话编排器 (Orchestrator)"]
-        NUDGE["预约引导引擎<br/><i>意愿评分 (readiness score)</i>"]
+        NUDGE["预约引导引擎<br/><i>规则判断 · 每段对话最多一次</i>"]
         CRISISOUT["危机求助资源<br/><i>不检索 · 不引导预约</i>"]
     end
     API --> SAFE
@@ -152,7 +152,7 @@ flowchart TD
     subgraph Human["💳 真人漏斗 (Funnel) — 收入来源"]
         BOOK["预约 / 排期 (Booking)"]
     end
-    NUDGE --> BOOK
+    NUDGE -->|"预约链接"| BOOK
     SEM["语义缓存 (semantic cache)"]:::future
     CF["协同过滤 (collaborative filtering)<br/>相似用户学习"]:::future
     PAY["支付 / 订阅 (Payments)"]:::future
@@ -205,23 +205,26 @@ flowchart TD
     Retrieve --> Floor{"匹配分数 ≥<br/>相关性下限?"}
     Floor -->|"否"| General["通用共情模式<br/>+ 标记: 关怀模式缺口"]
     Floor -->|"是"| Strat["注入匹配到的<br/>关怀模式策略"]
-    GeneralEarly --> Build
-    General --> Build
-    Strat --> Build["组装提示词:<br/>系统提示 + 历史 + 本轮指令"]
-    Crisis --> Build
+    GeneralEarly --> NudgeChk
+    General --> NudgeChk
+    Strat --> NudgeChk{"是否该引导预约?<br/>主动询问 · 转介建议 · 轮次"}
+    NudgeChk -->|"是 · 仅此一次"| Nudge["占用本段对话的名额<br/>+ 加入邀请指令"]
+    NudgeChk -->|"否"| Build
+    Nudge --> Build
+    Crisis --> Build["组装提示词:<br/>系统提示 + 历史 + 本轮指令"]
     Build --> Gen["gpt-4o 生成回复"]
     Gen --> CrisisOut{"本轮是<br/>危机对话吗?"}
     CrisisOut -->|"是"| Res["附上危机求助资源<br/>+ 记录去标识化的安全事件"]
-    CrisisOut -->|"否"| NudgeChk{"意愿评分 ≥ 阈值,<br/>或用户主动询问?"}
-    NudgeChk -->|"是"| Nudge["温和地建议预约<br/>一位真人咨询师"]
-    NudgeChk -->|"否"| Reply
+    CrisisOut -->|"否"| Link{"本轮引导预约了吗?"}
+    Link -->|"是"| Book["附上预约链接<br/><i>来自配置，绝不出自模型</i>"]
+    Link -->|"否"| Reply
     Res --> Reply(["回复用户"])
-    Nudge --> Reply
+    Book --> Reply
     Canned --> Reply
     Reply --> LogStep["若已获同意则记录<br/><i>去标识化 (de-identified)</i>"]
     classDef decision fill:#fff3e0,stroke:#e08600,color:#5a3b00;
     classDef danger fill:#fdeef3,stroke:#d6336c,color:#7a1138;
-    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut decision;
+    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut,Link decision;
     class Crisis,Res danger;
   </pre><div class="figcap">图 2 — 单条消息的对话流程。</div></div>
 
@@ -242,7 +245,16 @@ flowchart TD
     而失效），以及一个结合上下文判断的 <code>gpt-4o-mini</code> 分类器。任何一个命中，整轮对话都会改道——检索到的关怀模式指导
     会被<b>直接丢弃而非融合</b>，预约引导被抑制，回复改用危机指令来写。热线号码本身绝不经过语言模型：它们由应用层附加，因为
     让模型「给个热线」得到的往往是一个看起来很像、其实是错的号码。分类器失败时<b>不会</b>升级为危机——若反过来「宁可错杀」，
-    上游每打一次嗝，普通对话就会被塞一堆热线——失败会作为「安全层降级」记入日志。</div>
+    上游每打一次嗝，普通对话就会被塞一堆热线——失败会作为「安全层降级」记入日志。
+    <br/><br/>
+    <b>预约引导靠的是规则，不是评分。</b>三个信号按固定顺序判断：学生<b>主动开口</b>要找真人（一份中英文短语词表）、
+    命中的首条关怀模式<b>带有转介建议</b>且这段对话已经有几轮实质内容，或者仅凭<b>轮次</b>累积到位。它在每段对话中
+    <b>最多触发一次</b>，靠对 <code>conversations.booking_nudged_at</code> 的原子占用来保证，而不是指望模型自己记住。
+    邀请的措辞由模型写，但<b>去处来自应用配置</b>（<code>BOOKING_URL</code>），绝不经过模型——理由和热线号码那条完全
+    一样。首页那个「和真人聊聊」按钮也取同一个链接，通过一个公开的 <code>GET /public-config</code> 拿到，而不是在前端
+    构建时另存一份——这样按钮和聊天里的引导就不可能指向两个不同的地方。危机轮次绝不引导预约；而且只要这段对话<i>曾经</i>触发过危机，之后的自动引导就一直关闭，除非学生自己开口问——
+    因为筛查是逐轮进行的，一句「我没事了」并不能证明那一刻已经过去。加权意愿评分仍留在第 9 节：目前没有任何转化数据可
+    供加权，现行的阈值也是选定的，而非实测得出的。</div>
 
   <!-- ===== 3 ===== -->
   <h2 id="s3"><span class="num">3</span>关怀模式 — 存储、检索与冷启动 (RAG) 🟢</h2>
@@ -385,11 +397,14 @@ flowchart LR
   <p>有些问题根本不需要 LLM：「这是保密的吗?」「怎么预约真人咨询师?」这些给出<b>预写好的双语答案</b>。</p>
   <div class="note eng"><span class="label">为什么不用缓存</span><br/>
     缓存 (cache) 存的是<em>昂贵的计算结果</em>以免重算；而预设答案是<em>人工撰写的常量</em>——没有可重算的东西，也就没什么可缓存的。直接存起来即可。</div>
-  <ul>
-    <li><b>v1 — 代码库里的 i18n / 配置文件。</b>有版本管理、零基础设施，直接并入英文/中文文案表。</li>
-    <li><b>之后 — 一张 <code>canned_responses</code> 数据表</b>，当非工程人员需要不发版就能改答案时再迁移。</li>
-  </ul>
+  <p><b>存在哪里已经定了：<code>canned_responses</code> 数据表。</b>这一节原本留了个选择——v1 先放代码库里的 i18n 文件，
+    「等非工程人员需要不发版改答案时」再迁到数据表。功能 17 已经提前把这张表的编辑器做出来了，所以内容现在就在数据库里；
+    再放一份配置文件，只会变成一份没人审阅的副本。</p>
   <p><b>最佳体验：</b>做成<b>可点击的快捷回复气泡 (quick-reply chips)</b>——每个气泡确定性地映射到它的答案：不调用 LLM、无需匹配逻辑、零成本。</p>
+  <p><b>「怎么预约真人咨询师?」这一条自带答案和链接。</b>气泡返回预写好的文案<i>以及</i>那张预约卡片，链接取自
+    <code>GET /public-config</code>，整个过程不产生任何上游调用。这个问题如果交给模型回答，只会得到一段热情但空洞的回复——
+    因为第一轮根本没有上下文可谈。而学生若是在对话中途<i>自己打字</i>问同样的问题，仍然走完整流程，拿到功能 11 那条结合上下文的
+    引导：走确定性路径的是气泡，不是这句话本身。</p>
 
   <!-- ===== 5 ===== -->
   <h2 id="s5"><span class="num">5</span>成本控制 (Cost Control) ✅ <span style="font-weight:400;color:var(--muted);font-size:1rem;">（语义缓存 → 未来版）</span></h2>
