@@ -38,11 +38,20 @@ interface Conversation {
    * nothing has been folded in yet.
    */
   summarizedMessageCount: number;
+  /**
+   * When the booking nudge fired for this conversation, or null when it has not (Feature 11).
+   *
+   * Read on every turn so the inspector can say "already nudged" rather than leaving a silent
+   * reply unexplained; the *enforcement* of "at most once" is the atomic claim below, not this
+   * value, because two concurrent turns would both read it as null.
+   */
+  bookingNudgedAt: Date | null;
 }
 
 /** The columns that make up a Conversation, aliased to their TypeScript names. */
 const CONVERSATION_COLUMNS = `id, locale, summary,
-        summarized_message_count as "summarizedMessageCount"`;
+        summarized_message_count as "summarizedMessageCount",
+        booking_nudged_at as "bookingNudgedAt"`;
 
 /** Start a new anonymous conversation and return it. */
 export async function createConversation(locale: Locale): Promise<Conversation> {
@@ -78,12 +87,74 @@ export async function updateConversationLocale(id: string, locale: Locale): Prom
   await query(`update conversations set locale = $1 where id = $2 and locale is distinct from $1`, [locale, id]);
 }
 
-/** How many messages a conversation holds — the input to the compaction plan (Feature 8). */
-export async function countMessages(conversationId: string): Promise<number> {
-  const { rows } = await query<{ count: string }>(`select count(*) as count from messages where conversation_id = $1`, [
-    conversationId,
-  ]);
-  return Number(rows[0]?.count ?? 0);
+/**
+ * The two counts a turn needs before it builds anything, in one round trip.
+ *
+ * `total` drives the compaction plan (Feature 8). `substantiveStudentMessages` drives the
+ * booking readiness check (Feature 11) — student messages long enough to be worth counting,
+ * so that six exchanges of "ok" and "thanks" never add up to a conversation that has earned
+ * an invitation to book a counselor.
+ *
+ * Deliberately one query rather than two. The second count is a `filter` on a scan the first
+ * one was doing anyway, so the whole of Feature 11's state costs nothing on the hot path; a
+ * separate query would have made a rule-based, zero-cost decision quietly less zero-cost than
+ * it claims to be.
+ *
+ * Called BEFORE this turn's message is appended, like everything else at the top of a turn,
+ * so the caller adds the arriving message itself.
+ */
+export async function conversationCounts(
+  conversationId: string,
+  substantiveMinChars: number,
+): Promise<{ total: number; substantiveStudentMessages: number }> {
+  const { rows } = await query<{ total: string; substantive: string }>(
+    `select count(*) as total,
+            count(*) filter (
+              where role = 'user' and char_length(btrim(content)) >= $2
+            ) as substantive
+       from messages
+      where conversation_id = $1`,
+    [conversationId, substantiveMinChars],
+  );
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    substantiveStudentMessages: Number(rows[0]?.substantive ?? 0),
+  };
+}
+
+/**
+ * Claim this conversation's one and only booking nudge (Feature 11 AC 1).
+ *
+ * Returns true when THIS turn now owns the nudge, false when the conversation had already
+ * used it. The `where ... is null` is the enforcement, not decoration: two turns running at
+ * once would both have read `bookingNudgedAt` as null at the top of the turn, both decide to
+ * nudge, and produce exactly the nagging AC 1 forbids. Only one update can report a row.
+ *
+ * Same optimistic-concurrency shape as `saveSummary` above, for the same reason.
+ */
+export async function claimBookingNudge(conversationId: string): Promise<boolean> {
+  const { rowCount } = await query(
+    `update conversations set booking_nudged_at = now()
+      where id = $1 and booking_nudged_at is null`,
+    [conversationId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Give the nudge back, because the reply it was going to ride on never reached the student.
+ *
+ * The claim has to happen before the reply is generated — the instruction is part of the
+ * prompt — so an upstream failure would otherwise consume a conversation's single nudge on a
+ * turn the student saw as an error bubble. Never throws: a failure here costs one unfired
+ * nudge, and a turn that has already failed should not fail twice.
+ */
+export async function releaseBookingNudge(conversationId: string): Promise<void> {
+  try {
+    await pool.query(`update conversations set booking_nudged_at = null where id = $1`, [conversationId]);
+  } catch {
+    // Deliberately swallowed. The caller is already handling a more important failure.
+  }
 }
 
 /**

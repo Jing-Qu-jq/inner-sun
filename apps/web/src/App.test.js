@@ -15,6 +15,16 @@ jest.mock('@splidejs/react-splide', () => ({
 // the smoke test; stub it out.
 jest.mock('./components/ConnectionMap', () => () => <div data-testid="connection-map" />);
 
+// The home page asks the API where to book a counselor (Feature 11). A shell smoke test must
+// not depend on a server being up — left unstubbed it either hits a real localhost API or
+// leaves a pending request behind, and which of those happens depends on whether the
+// developer had `npm run dev` running. CtaBand's own suite covers both answers properly.
+jest.mock('./fetchers/PublicConfigFetcher', () => ({
+    useBookingUrl: () => '',
+    fetchPublicConfig: async () => ({}),
+    clearPublicConfigCache: () => {},
+}));
+
 test('renders the InnerSun app shell', () => {
     render(<App />);
 

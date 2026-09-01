@@ -11,7 +11,9 @@
 // Absolute rather than a relative path proxied by the dev server, so local
 // development exercises the same cross-origin request that a deployed build
 // will (the API allows WEB_ORIGIN via CORS). Feature 21 sets this for real.
-const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
+// Exported so everything that talks to the API agrees on where it is — see
+// PublicConfigFetcher, which asks the same service for the booking link.
+export const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
 
 // Longest message the API accepts; mirrors MAX_MESSAGE_LENGTH in
 // packages/shared. Enforced in the UI too so an over-long message is prevented
@@ -148,20 +150,23 @@ async function postChat({ message, conversationId, locale, compare }) {
         throw new ChatRequestError('bad_response', { status: response.status });
     }
 
-    // `crisis` is present only on a turn the API screened as a crisis (Feature 9), and
-    // `debug` only for a valid inspector token; both are undefined otherwise. Neither is
-    // re-derived here — the browser is not in a position to second-guess a safety decision.
+    // `crisis` is present only on a turn the API screened as a crisis (Feature 9),
+    // `booking` only on the single turn a conversation nudges toward a human counselor
+    // (Feature 11), and `debug` only for a valid inspector token; all three are undefined
+    // otherwise. None of them is re-derived here — the browser is not in a position to
+    // second-guess a safety decision, and it would be guessing at the funnel too.
     return {
         reply: body.reply,
         conversationId: body.conversationId,
         locale: body.locale,
         crisis: body.crisis,
+        booking: body.booking,
         debug: body.debug,
     };
 }
 
 /**
- * Send one message and return `{ reply, conversationId, locale, crisis, debug }`.
+ * Send one message and return `{ reply, conversationId, locale, crisis, booking, debug }`.
  *
  * Pass the `conversationId` from the previous reply to continue a conversation;
  * omit it to start one. History itself is the server's business — it lives in

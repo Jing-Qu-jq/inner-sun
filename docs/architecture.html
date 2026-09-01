@@ -132,7 +132,7 @@ flowchart TD
         API["API Gateway + Auth<br/><i>login optional</i>"]
         SAFE["Safety / Crisis Detection<br/><i>runs first · overrides the rest</i>"]
         ORCH["Chat Orchestrator"]
-        NUDGE["Booking-Nudge Engine<br/><i>readiness score</i>"]
+        NUDGE["Booking-Nudge Engine<br/><i>rules · once per conversation</i>"]
         CRISISOUT["Crisis resources<br/><i>no retrieval · no nudge</i>"]
     end
     API --> SAFE
@@ -154,7 +154,7 @@ flowchart TD
     subgraph Human["💳 Human Funnel — where revenue is made"]
         BOOK["Booking / Scheduling"]
     end
-    NUDGE --> BOOK
+    NUDGE -->|"scheduling link"| BOOK
     SEM["Semantic cache"]:::future
     CF["Collaborative filtering<br/>similar-user learning"]:::future
     PAY["Payments / Subscription"]:::future
@@ -210,23 +210,26 @@ flowchart TD
     Retrieve --> Floor{"Match score ≥<br/>relevance floor?"}
     Floor -->|"No"| General["General empathetic mode<br/>+ flag: Care-Pattern gap"]
     Floor -->|"Yes"| Strat["Inject matched<br/>Care-Pattern strategies"]
-    GeneralEarly --> Build
-    General --> Build
-    Strat --> Build["Assemble prompt:<br/>system + history + turn directive"]
-    Crisis --> Build
+    GeneralEarly --> NudgeChk
+    General --> NudgeChk
+    Strat --> NudgeChk{"Ready to nudge?<br/>asked · escalation · turns"}
+    NudgeChk -->|"Yes · once only"| Nudge["Claim the nudge<br/>+ add the invitation"]
+    NudgeChk -->|"No"| Build
+    Nudge --> Build
+    Crisis --> Build["Assemble prompt:<br/>system + history + turn directive"]
     Build --> Gen["gpt-4o writes the reply"]
     Gen --> CrisisOut{"Was it a<br/>crisis turn?"}
     CrisisOut -->|"Yes"| Res["Attach crisis resources<br/>+ de-identified safety event"]
-    CrisisOut -->|"No"| NudgeChk{"Readiness score ≥<br/>threshold, or asked?"}
-    NudgeChk -->|"Yes"| Nudge["Gently suggest booking<br/>a real counselor"]
-    NudgeChk -->|"No"| Reply
+    CrisisOut -->|"No"| Link{"Did it nudge?"}
+    Link -->|"Yes"| Book["Attach the booking link<br/><i>from config, never from the model</i>"]
+    Link -->|"No"| Reply
     Res --> Reply(["Reply to user"])
-    Nudge --> Reply
+    Book --> Reply
     Canned --> Reply
     Reply --> LogStep["Log if consented<br/><i>de-identified</i>"]
     classDef decision fill:#fff3e0,stroke:#e08600,color:#5a3b00;
     classDef danger fill:#fdeef3,stroke:#d6336c,color:#7a1138;
-    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut decision;
+    class Q1,FAQ,Signal,Floor,SafetyChk,NudgeChk,CrisisOut,Link decision;
     class Crisis,Res danger;
   </pre><div class="figcap">Figure 2 — Per-message conversation flow.</div></div>
 
@@ -253,7 +256,20 @@ flowchart TD
     directive instead. The hotline numbers themselves never pass through a language model: they are appended by the
     application, because a model asked for a hotline produces a plausible wrong one. A classifier that fails does
     <b>not</b> escalate the turn — failing closed would put hotlines in front of ordinary conversations on every upstream
-    hiccup — and the failure is logged as a degraded safety layer.</div>
+    hiccup — and the failure is logged as a degraded safety layer.
+    <br/><br/>
+    <b>The booking nudge is rules, not a score.</b> Three signals decide it, read in order: the student <b>asked</b> for a
+    human (a phrase lexicon in English and Chinese), the closest matched pattern <b>carries escalation guidance</b> and
+    the conversation has a few substantive turns behind it, or <b>turn count</b> alone. It fires <b>at most once per
+    conversation</b>, enforced by an atomic claim on <code>conversations.booking_nudged_at</code> rather than by asking
+    the model to remember. The model writes the invitation in its own words; the <b>destination is application
+    configuration</b> (<code>BOOKING_URL</code>) and never passes through it, for the same reason the hotline numbers do
+    not. The home page's "Talk to a human" button takes the same link from a small public
+    <code>GET /public-config</code> rather than a build-time copy, so that button and the nudge inside the chat can never
+    point at different places. A crisis turn never nudges — and neither does any later turn of a conversation that has <i>ever</i> been in
+    crisis, unless the student asks, because screening is per-turn and "I'm okay now" is not evidence that the moment
+    has passed. Weighted readiness scoring stays in §9: there is no conversion data to weight against yet, and the
+    thresholds in force today are chosen rather than measured.</div>
 
   <!-- ===== 3 ===== -->
   <h2 id="s3"><span class="num">3</span>Care Patterns — Storage, Retrieval &amp; Cold-Start (RAG) 🟢</h2>
@@ -427,12 +443,18 @@ flowchart LR
   <div class="note eng"><span class="label">Why not cache</span><br/>
     A cache stores <em>expensive computed results</em>; canned answers are <em>authored constants</em> — nothing to
     recompute, so nothing to cache. Store them directly.</div>
-  <ul>
-    <li><b>v1 — an i18n / config file</b> in the codebase. Versioned, zero infra, slots into the EN/中文 catalog.</li>
-    <li><b>Later — a <code>canned_responses</code> DB table</b> when non-engineers must edit without a deploy.</li>
-  </ul>
+  <p><b>Where they live is settled: the <code>canned_responses</code> table.</b> This section once offered a choice —
+    an i18n file in the codebase for v1, a database table "later, when non-engineers need to edit without a deploy".
+    Feature 17 answered it early by shipping the editor for that table, so the content is in the database now and a
+    config file would be a second, unreviewable copy of it.</p>
   <p><b>Best UX:</b> surface them as <b>clickable quick-reply chips</b> — each maps deterministically to its answer:
     no LLM call, no matching, zero cost.</p>
+  <p><b>"How do I book a real counselor?" answers itself, link included.</b> The chip returns its canned text
+    <i>and</i> the booking card, taking the URL from <code>GET /public-config</code>, so the whole exchange costs
+    nothing upstream. That question routed through the model produces a warm, empty reply, because on the first turn
+    there is no conversation to be contextual about. A student who <i>types</i> the same question mid-conversation
+    still goes through the pipeline and gets Feature 11's contextual nudge: the deterministic path is the chip, not
+    the phrase.</p>
 
   <!-- ===== 5 ===== -->
   <h2 id="s5"><span class="num">5</span>Cost Control ✅ <span style="font-weight:400;color:var(--muted);font-size:1rem;">(semantic caching → Future)</span></h2>

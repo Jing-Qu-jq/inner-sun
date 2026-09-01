@@ -9,6 +9,7 @@ import { ChatHeart } from 'react-bootstrap-icons';
 
 import paperAirplaneIcon from '../../images/paper_airplane.svg';
 import ConversationFetcher, { MAX_MESSAGE_LENGTH, getInspectorToken } from '../../fetchers/ConversationFetcher';
+import { BookingInvite } from './BookingInvite';
 import { CrisisNotice } from './CrisisNotice';
 import { InspectorBar, InspectorPanel, inspectorRequested } from './Inspector';
 import { useI18n } from '../../i18n';
@@ -88,7 +89,9 @@ function Chat() {
     const sendQueueRef = useRef(Promise.resolve());
 
     // Suggested conversation starters for the empty state. Clicking one pre-fills
-    // the input; later some become deterministic canned answers (Feature 10).
+    // the input; later some become deterministic canned answers (Feature 10). The last one
+    // is deliberately a request for a human — it trips Feature 11's explicit-request rule on
+    // the very first message, so the shortest path to a counselor is one tap.
     const starters = [
         t('chat.starter.homesick'),
         t('chat.starter.stress'),
@@ -143,7 +146,7 @@ function Chat() {
 
         sendQueueRef.current = sendQueueRef.current.then(async () => {
             try {
-                const { reply, conversationId, crisis, debug } = await ConversationFetcher({
+                const { reply, conversationId, crisis, booking, debug } = await ConversationFetcher({
                     message: text,
                     conversationId: conversationIdRef.current,
                     locale,
@@ -152,10 +155,11 @@ function Chat() {
                 // Every later turn carries this, which is how the API knows
                 // which stored conversation to append to.
                 conversationIdRef.current = conversationId;
-                // `crisis` is present only on a turn the API screened as one (Feature 9) and
-                // `debug` only for an inspector, so both are stored unconditionally and simply
-                // have nothing to show in the ordinary case.
-                resolvePlaceholder(placeholderId, { text: reply, className: undefined, crisis, debug });
+                // `crisis` is present only on a turn the API screened as one (Feature 9),
+                // `booking` only on the one turn a conversation nudges toward a human counselor
+                // (Feature 11), and `debug` only for an inspector — so all three are stored
+                // unconditionally and simply have nothing to show in the ordinary case.
+                resolvePlaceholder(placeholderId, { text: reply, className: undefined, crisis, booking, debug });
                 // Read from the ref rather than the captured value: the token can be unlocked
                 // while this turn is in flight, and judging a reply against a token that was
                 // not sent with it would report a rejection that never happened.
@@ -178,7 +182,7 @@ function Chat() {
     // stored message keeps carrying the plain reply.
     const dataSource = messageList.map((item) => {
         if (item.errorKey) return { ...item, text: t(item.errorKey) };
-        if (!item.debug && !item.crisis) return item;
+        if (!item.debug && !item.crisis && !item.booking) return item;
         return {
             ...item,
             className: item.debug ? 'message-inspected' : item.className,
@@ -186,6 +190,7 @@ function Chat() {
                 <>
                     <span>{item.text}</span>
                     {item.crisis && <CrisisNotice crisis={item.crisis} />}
+                    {item.booking && <BookingInvite booking={item.booking} />}
                     {item.debug && <InspectorPanel debug={item.debug} reply={item.text} />}
                 </>
             ),

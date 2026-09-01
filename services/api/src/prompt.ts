@@ -14,6 +14,8 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
  *   prompts/turn-directive.md   per-turn. The language note and the retrieved guidance.
  *   prompts/crisis-directive.md per-turn, and instead of the above, when crisis screening
  *                               fired (Feature 9). Same position, so the prefix is unchanged.
+ *   prompts/booking-nudge.md    per-turn, dropped INTO the turn directive on the single turn
+ *                               a conversation nudges toward a human counselor (Feature 11).
  *
  * and the order they are assembled in is
  *
@@ -78,6 +80,20 @@ const TURN_DIRECTIVE_TEMPLATE = loadPrompt("turn-directive.md");
  */
 const CRISIS_DIRECTIVE_TEMPLATE = loadPrompt("crisis-directive.md");
 
+/**
+ * The block that invites the student to book a real counselor (Feature 11).
+ *
+ * Dropped into the ordinary directive's `{{booking_nudge}}` slot on the one turn per
+ * conversation where the readiness check fires, and replaced by nothing on every other turn.
+ * A separate file rather than a paragraph with a conditional around it, for the same reason
+ * the crisis directive is one: it is a discrete instruction that a researcher may want to
+ * reword without reading TypeScript.
+ *
+ * It is never reachable from the crisis directive, which has no such slot — that is the second
+ * of the two places AC 4 is enforced, the first being the readiness check refusing to fire.
+ */
+const BOOKING_NUDGE_TEMPLATE = loadPrompt("booking-nudge.md");
+
 /** How each locale should be named to the model, in its own script. */
 const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
@@ -99,16 +115,27 @@ export interface TurnDirectiveOptions {
    * turn where the whole point is that there is none.
    */
   crisis?: boolean;
+  /**
+   * True on the one turn where the booking readiness check fired (Feature 11). Ignored on a
+   * crisis turn, which uses a directive that has no slot for it at all — AC 4 says the nudge
+   * never fires during a crisis flow, and it is worth that rule holding here as well as in
+   * the check that produced the flag.
+   */
+  bookingNudge?: boolean;
 }
 
-/** Fill the per-turn template: the language note and this turn's Care Pattern guidance. */
-export function buildTurnDirective({ locale, carePatternStrategies = "", crisis = false }: TurnDirectiveOptions): string {
+/** Fill the per-turn template: the language note, this turn's guidance, and the nudge. */
+export function buildTurnDirective({
+  locale,
+  carePatternStrategies = "",
+  crisis = false,
+  bookingNudge = false,
+}: TurnDirectiveOptions): string {
   if (crisis) return CRISIS_DIRECTIVE_TEMPLATE.replaceAll("{{locale}}", LOCALE_LABELS[locale]);
 
-  return TURN_DIRECTIVE_TEMPLATE.replaceAll("{{locale}}", LOCALE_LABELS[locale]).replaceAll(
-    "{{care_pattern_strategies}}",
-    carePatternStrategies.trim(),
-  );
+  return TURN_DIRECTIVE_TEMPLATE.replaceAll("{{locale}}", LOCALE_LABELS[locale])
+    .replaceAll("{{care_pattern_strategies}}", carePatternStrategies.trim())
+    .replaceAll("{{booking_nudge}}", bookingNudge ? BOOKING_NUDGE_TEMPLATE : "");
 }
 
 export interface ChatPromptOptions {
@@ -123,6 +150,8 @@ export interface ChatPromptOptions {
   carePatternStrategies?: string;
   /** True when crisis screening fired: the crisis directive replaces the ordinary one. */
   crisis?: boolean;
+  /** True on the one turn where the booking nudge fires (Feature 11). */
+  bookingNudge?: boolean;
 }
 
 /**
@@ -138,6 +167,7 @@ export function buildChatMessages({
   message,
   carePatternStrategies = "",
   crisis = false,
+  bookingNudge = false,
 }: ChatPromptOptions): ChatCompletionMessageParam[] {
   const messages: ChatCompletionMessageParam[] = [{ role: "system", content: STATIC_SYSTEM_PROMPT }];
 
@@ -155,7 +185,10 @@ export function buildChatMessages({
     messages.push({ role: turn.role, content: turn.content } as ChatCompletionMessageParam);
   }
 
-  messages.push({ role: "system", content: buildTurnDirective({ locale, carePatternStrategies, crisis }) });
+  messages.push({
+    role: "system",
+    content: buildTurnDirective({ locale, carePatternStrategies, crisis, bookingNudge }),
+  });
   messages.push({ role: "user", content: message });
 
   return messages;

@@ -9,7 +9,7 @@
 - **Everything runs on `localhost`** until Feature 24, with one earlier exception (below). *(Amended 2026-08-29: this plan originally deferred all deployment to Feature 21, the last feature. It no longer does — see Feature 24.)*
 - The current prototype stays on GitHub Pages untouched until then.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
-- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, Feature 23 was added mid-Phase-1 and has since moved to the head of Phase 2, and Feature 24 was added at the end of Phase 1 to put the site on a private URL early. The reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
+- **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, Feature 23 was added mid-Phase-1 and has since moved into Phase 2, Feature 10 moved from Phase 1 to the head of Phase 2 so its canned answers can be written from real preview traffic rather than guessed, and Feature 24 was added at the end of Phase 1 to put the site on a private URL early. The reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
 ### Going live in two steps, not one
 **Feature 24 (added 2026-08-29)** puts the student app on a real URL at the end of Phase 1, once
@@ -295,7 +295,7 @@ as rotatable, since it grants read access to the Care Pattern library's titles, 
 
 **The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: ✅ Feature 8's prompt assembly and token budget (delivered — the panel now shows how many messages went in full versus were replaced by the summary, the summary text itself, every upstream call with its model and tokens, and what the turn and the conversation have cost), ✅ Feature 9's crisis detection (delivered — the panel now shows which detector fired, the category, the classifier's label, the rule ids, and an explicit line when a Care-Pattern match was overridden), and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
 
-**Not done here, on purpose:** the rows those later features will add, since the decisions they show do not exist yet.
+**Not done here, on purpose:** the rows *later* features will add, since the decisions they show do not exist yet. Features 8, 9 and 11 have each since added theirs, which is the pattern working as intended.
 
 ## Feature 8: Prompt assembly + cost controls 🟡 (built and verified live; prompt caching needs real traffic to confirm)
 Assemble the final prompt and keep per-conversation cost low.
@@ -361,8 +361,9 @@ Non-negotiable for a mental-health product.
    on the response — a category and a localized resource list — which the web app renders as a panel
    under the reply (`apps/web/src/components/Chat/CrisisNotice.js`). The reply itself is written to a
    different directive (`prompts/crisis-directive.md`) that forbids coping tips, forbids the booking
-   nudge, and asks one direct question about immediate safety. Feature 11's booking flow does not exist
-   yet, so today the hand-off *is* the resource list — every entry on it is staffed by people, now.
+   nudge, and asks one direct question about immediate safety. Feature 11 has since built the booking
+   flow, and it stays switched off here on purpose: on a crisis turn the hand-off *is* the resource
+   list — every entry on it is staffed by people now, rather than next week.
 3. ✅ **Crisis outranks Care-Pattern matching.** Demonstrated on a live turn: the homesickness pattern
    matched at **0.6291** against a 0.54 floor and its guidance was **dropped, not blended** — the
    inspector reads "Care-Pattern guidance withheld · 0.6291". The retrieved strategies are discarded
@@ -433,33 +434,137 @@ the population being served.
   the inspector's call table, so Feature 8's model tiering stays legible rather than being quietly eroded
   by a new call.
 
-## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
-Answer common questions with zero LLM cost.
-**Depends on:** Feature 5.
-**AC:**
-1. A set of canned bilingual answers exists (e.g. "Is this confidential?", "How do I book a real counselor?", "Are you a real person?").
-2. These live in the `canned_responses` table — **not** cached, not LLM-generated. *(The "DB table optional" wording here is now settled: Feature 17 ships the editor for this table, so the content must be in the database rather than a config file.)*
-3. The chat UI shows **clickable quick-reply chips** that return the canned answer deterministically with no API call.
-4. Adding/editing a canned answer requires no model call and no matching logic.
-
-**Note:** the *authoring* half of this feature is delivered early by Feature 17, whose admin tool has a tab for `canned_responses`. What remains here is the student-facing half — surfacing the chips in the chat UI and returning the answer without an API call. Do not build a second editor.
-
-## Feature 11: Booking nudge + "talk to a human" path 🟢
+## Feature 11: Booking nudge + "talk to a human" path ✅ (done — verified live, 2026-09-01)
 The whole point of the funnel: convert trust into a booking.
 **Depends on:** Features 5, 9.
-**AC:**
-1. A **rule-based readiness check** decides when to nudge (e.g. enough substantive turns, or the user explicitly asks for a human, or a pattern's `escalation` flag) — and it nudges **at most once** per conversation (no nagging).
-2. When triggered, the AI gently suggests booking a real counselor.
-3. A working **booking entry point** exists (v1 can be a simple request form or scheduling link — full payments are Future).
-4. The nudge never fires during an active crisis flow (that path takes over).
-5. The **Feature 22 inspector shows why a nudge fired** on the turn it fired — which part of the readiness check was satisfied (turn count, an explicit request, or a matched pattern's `escalation`), and why it stayed silent on the turns it did not. A rule-based decision that can only be inferred from the reply's wording cannot be tuned.
+
+**AC (all met):**
+1. ✅ **A rule-based readiness check, at most once per conversation.** No model call and no score:
+   three signals read in a fixed order in `services/api/src/booking.ts` — the student **asked**
+   (a phrase lexicon, 8 rules, English and Chinese), a matched pattern **carries escalation
+   guidance** and the conversation has some substance, or **turn count** alone. "At most once" is
+   an atomic claim on `conversations.booking_nudged_at` (migration 0007), not a promise: two
+   simultaneous turns of one conversation both decided to nudge and **exactly one got it**, the
+   other reporting `already_nudged`. `npm run booking:check` runs 26 labelled cases — 9/9 lexicon
+   recall, 8/8 precision, 9/9 gates — offline, with no key and no database.
+2. ✅ **The AI makes the invitation, in its own voice.** `prompts/booking-nudge.md` is dropped into
+   the turn directive's `{{booking_nudge}}` slot on that one turn. A real reply from the live run:
+   *"If you'd like, talking to someone who understands these feelings might really help. You can
+   book a session with a counselor through the link below, and I'll still be here to chat whenever
+   you need."*
+3. ✅ **A working booking entry point, in both places a student looks for one.** `BOOKING_URL` —
+   a scheduling link, supplied by configuration because it belongs to the practice rather than to
+   this codebase — reaches the student two ways: as a card under the reply on the turn that nudged
+   (`apps/web/src/components/Chat/BookingInvite.js`), and as the home page's **"Talk to a human"**
+   button, which used to scroll down to the placeholder counselor profiles and now leads somewhere
+   real. Verified in a real browser in both languages. **Outstanding: the link is currently a
+   placeholder** and a real one is needed before Feature 24 puts the app in front of the co-owner.
+4. ✅ **Never during a crisis flow**, and enforced twice over. On a crisis turn the check refuses
+   outright — verified live: a disclosure mid-conversation reported `suppressedBy: crisis` even
+   though the student had explicitly asked for a counselor two turns earlier — and the crisis
+   directive has no nudge slot at all, so a bug in the first could not reintroduce it.
+5. ✅ **The inspector shows the decision on every turn**, fired or not: the signal, what suppressed
+   it, substantive turns against the threshold in force, the escalating pattern's title, and the
+   rule ids. Verified in a real browser on the nudge path, the silent path and the suppressed one.
+
+**The nudge is suppressed for the rest of a conversation that has ever been in crisis — and that
+is the one rule here worth arguing about.** AC 4 as written covers the crisis *turn*, and Feature 9
+screens per turn by design, so the literal reading leaves a hole: a student discloses self-harm on
+turn 4, writes "sorry, I'm okay now" on turn 5, and on turn 6 a rule that has simply counted to six
+invites them to book an appointment — next week, which is precisely what the crisis directive spends
+a paragraph forbidding. So an automatic nudge is off for good once `safety_events` holds a row for
+the conversation (`suppressedBy: crisis_earlier`, verified live). An **explicit request still
+works**: refusing to help somebody who has just asked to talk to a person would be a strange way to
+keep them safe, and that path was verified too. The cost is one lookup, on the at-most-once turn
+where an automatic signal fires, and it fails closed — a query error suppresses the nudge.
+
+**Design decisions worth carrying forward:**
+- **The home page asks the API for the link rather than baking in its own copy.** A new public
+  `GET /public-config` returns `{ bookingUrl }` and nothing else. The obvious alternative — a
+  `REACT_APP_BOOKING_URL` read at build time — is a second source of the same fact, settable
+  independently of the one the API is actually handing to students, and the failure it produces is
+  invisible: the site keeps working and quietly sends people somewhere the API stopped using. One
+  unauthenticated GET of a link that is meant to be public is a cheaper price than that. The button
+  **falls back to scrolling to the counselor profiles** when the config carries no link or the API
+  cannot be reached, which is exactly what it did before this feature — covered by
+  `apps/web/src/components/CtaBand/index.test.js`, because that branch lasts only until the fetch
+  resolves and is therefore invisible in a browser.
+- **The booking URL never passes through the model.** Exactly Feature 9's rule about hotline
+  numbers, one notch down in severity: `booking-nudge.md` forbids stating any link, address or
+  price and tells the model to say "the link below", and the app attaches the real destination.
+  Both live runs, English and Chinese, produced replies that referred to the link without inventing
+  one.
+- **`BOOKING_URL` unset means the nudge does not exist**, and a malformed one refuses to boot. There
+  is no default and no placeholder in code, because a nudge with nowhere to go is worse than not
+  asking — and a broken link is clicked at the exact moment a student decided to ask for help. Both
+  verified: unset logs a startup warning and reports `suppressedBy: disabled` while still recording
+  the signal that *would* have fired, and `BOOKING_URL=ht!tp://nope` stops the server with a
+  readable message.
+- **The model was taken out of the decision entirely.** The static system prompt used to say
+  "when the moment is right and the student seems ready, gently suggest booking... at most once
+  unless they ask" — a stateless call being asked to remember something. It now says the
+  application decides and will say so, and not to raise it otherwise. That is what makes AC 1
+  enforceable rather than hoped for. It costs about 95 tokens on the static prompt, which stays
+  static.
+- **"Substantive" is doing more work than the threshold.** Six exchanges of "ok", "yeah" and
+  "thanks" are not a conversation that has earned an invitation, and a raw message count cannot
+  tell the difference. Student messages under `BOOKING_MIN_TURN_CHARS` (30) do not count, which is
+  visible in the live trace: a turn of "ok" left the counter at 1 while the message count moved.
+- **The counter costs nothing.** It is a `count(*) filter (...)` on the scan Feature 8's compaction
+  plan was already doing, so the whole of this feature's per-turn state is one extra column in one
+  existing query.
+- **The claim is taken before the reply and given back if the reply fails.** The instruction has to
+  be in the prompt, so the nudge is claimed first; an upstream failure would otherwise consume a
+  conversation's single invitation on a turn the student saw as an error bubble. Verified by
+  pointing `OPENAI_BASE_URL` at a dead port: the turn claimed the nudge, returned 502, and
+  `booking_nudged_at` was back to null.
+- **Only the closest matched pattern's escalation counts.** A second, weaker match also carrying an
+  escalation note is not more evidence that this student needs a human — it is evidence that most
+  patterns in a clinical library say something about escalation, which they do.
+- **The `escalation` field is prose describing a condition, not a flag** — "*If low mood persists
+  for weeks and impairs daily functioning, suggest a human counselor*" — and no rule can evaluate
+  that condition. So v1 reads only whether the matched pattern contemplates escalation at all, and
+  today every seed pattern does. In practice the signal therefore means "the library recognized this
+  situation, and we are a few turns in", which is a real distinction from turn count alone (3 turns
+  versus 6) but a weaker one than AC 1's wording suggests. It sharpens itself the moment a
+  researcher authors a pattern with no escalation note.
+- **The lexicon can afford to be looser than the crisis one.** There, a false positive puts hotline
+  numbers in front of somebody discussing coursework. Here it is a gentle, once-only mention of a
+  counselor — unwelcome, not harmful. Two exclusions are still deliberate and tested: **past tense**
+  ("I talked to a counselor last year and it didn't help" is a report, not a request) and **"are you
+  a real person?"**, which is a Feature 10 FAQ about what InnerSun *is*, not a request to be handed
+  on. The Chinese rules require an intent verb for the same reason — 咨询师 on its own also appears
+  in 你是咨询师吗.
+
+**The thresholds are chosen, not measured, and that is stated rather than glossed.** Six substantive
+turns, three with an escalating pattern, thirty characters to count — none of these is calibrated
+against anything. What would calibrate them is conversion data: which nudges were clicked, at which
+point in a conversation, which is Feature 19's job and needs traffic that does not exist yet. They
+are configuration (`BOOKING_MIN_STUDENT_TURNS`, `BOOKING_ESCALATION_MIN_STUDENT_TURNS`,
+`BOOKING_MIN_TURN_CHARS`) so a researcher can move them without a deploy. This project has been
+burned once by a threshold set by reasoning — ARCHITECTURE.md's "start around 0.7–0.8" relevance
+floor would have rejected every correct match — so the honest statement is that these are a starting
+point, and `booking:check` exists to make changing them cheap rather than to prove them right.
+
+**What it costs.** Nothing per turn: no model call, no embedding, no extra query. The nudge turn
+itself costs the same as any other turn plus about 95 tokens of directive.
+
+**Not done here, on purpose:**
+- **No booking record is stored.** A request form storing a student's contact details would be the
+  first directly identifying data in this database, and the consent notice is deliberately deferred
+  to Feature 21. A scheduling link keeps that decision where it belongs.
+- **Weighted readiness scoring** stays *Future*, per ARCHITECTURE.md §9 — there is nothing to weight
+  against yet.
+- **Payments and scheduling infrastructure** remain *Future*.
 
 ---
 
 ## Feature 24: Private preview — take the site online for the co-owner 🟢
 Put the student-facing app on a real URL that the co-owner can use on her own time, unsupervised,
 and screenshot for incubator applications. **Not public** — just not advertised. **Depends on:**
-Features 9, 11.
+Features 9 and 11 — **both now done, so this is the next feature to build.** Feature 10 was moved out
+of Phase 1 rather than kept ahead of it: it is not a blocker, and its canned answers are better written
+from the questions this preview actually produces.
 
 **A deliberate slice of Features 20 and 21**, the same arrangement the Feature 17 hosting work used.
 It takes only what is needed to hand one person a working link, and leaves everything that exists
@@ -492,6 +597,11 @@ all at the same time, on the same deployed instance.
    it grants read access to the Care Pattern library's titles, scores and guidance text.
 6. **A smoke test passes against the deployed instance**, not localhost: chat → Care-Pattern match →
    crisis path → booking entry point → both languages.
+7. **`BOOKING_URL` is set to a real scheduling link.** Feature 11 ships with the nudge switched off
+   when it is unset — deliberately, because an invitation with nowhere to go is worse than none —
+   so AC 6's booking step cannot pass until the practice's actual link exists. It is a `sync: false`
+   env var on the Render service, alongside `INSPECTOR_TOKEN`; `render.yaml` declares neither yet
+   because that blueprint is still the admin-only instance with `ENABLE_CHAT_ROUTES=false`.
 
 **Scheduled immediately after this feature goes up — reminders, not blockers:**
 - **The crisis resource list gets a researcher's review** (the outstanding item from Feature 9,
@@ -513,9 +623,49 @@ The exposure without AC 1 is unbounded, which is the whole argument for it being
 
 # Phase 2 — Users, memory & languages
 
+## Feature 10: Pre-defined answers (FAQ) + quick-reply chips 🟢
+Answer common questions with zero LLM cost.
+**Depends on:** Feature 5. **Build first in Phase 2**, ahead of Feature 23.
+**AC:**
+1. A set of canned bilingual answers exists (e.g. "Is this confidential?", "How do I book a real counselor?", "Are you a real person?").
+2. These live in the `canned_responses` table — **not** cached, not LLM-generated. *(The "DB table optional" wording here is now settled: Feature 17 ships the editor for this table, so the content must be in the database rather than a config file.)*
+3. The chat UI shows **clickable quick-reply chips** that return the canned answer deterministically with no API call.
+4. Adding/editing a canned answer requires no model call and no matching logic.
+5. **"How do I book a real counselor?" answers itself, with the booking link attached** — the canned text plus the same `BookingInvite` card the Feature 11 nudge renders, and **no upstream call at all**. See below.
+
+**Note:** the *authoring* half of this feature is delivered early by Feature 17, whose admin tool has a tab for `canned_responses`. What remains here is the student-facing half — surfacing the chips in the chat UI and returning the answer without an API call. Do not build a second editor.
+
+**Why it moved here from Phase 1 (decided 2026-09-01).** Two reasons, and the second is the real one.
+It is not a blocker for Feature 24 — that needed Features 9 and 11, both done — so keeping it in Phase 1
+only delayed the preview. And **writing canned answers before the preview is guessing which questions
+students ask.** The same traffic that Feature 24 exists to produce, and that Feature 23 needs for its
+multi-turn cases, is what should decide the chip set. It sits first in Phase 2 so that decision gets made
+while the preview conversations are fresh.
+
+**The booking chip must not go through `POST /chat` (AC 5).** Today tapping the "Can I talk to a real
+counselor?" starter sends real text, which trips Feature 11's explicit-request rule, spends about half a
+cent, and returns a warm but empty reply — *"Of course, you can talk to a real counselor. It's a great
+way to explore how you're feeling..."* — because on turn one there is no conversation to be contextual
+about. A canned answer is better on every axis here: instant, free, bilingual, and reviewable by a
+researcher in the admin tool.
+
+The link is already available to the browser without a model call: Feature 11 added `GET /public-config`,
+which the home page's "Talk to a human" button uses and which is cached per page load. So AC 3's "no API
+call" means **no upstream/model call** — a config fetch that has already happened costs nothing. Reuse
+`BookingInvite` rather than building a second card, and keep its fallback: with no `BOOKING_URL`
+configured the canned text still explains the process and simply shows no button.
+
+**Two consequences worth knowing before building it:**
+- **A canned answer creates no conversation**, so there is no row to mark as nudged. That is the right
+  outcome rather than a gap: the student has the link, and if they go on to have a real conversation the
+  Feature 11 nudge can still fire once, in context.
+- **Typed text still goes through the pipeline.** A student who *writes* "can I talk to a real counselor?"
+  mid-conversation should reach `POST /chat` and get the contextual nudge — the deterministic path is the
+  chip, not the phrase.
+
 ## Feature 23: A working formulation that survives a turn 🟢
 Stop the match flapping at the relevance floor, and give every student a head start.
-**Depends on:** Feature 7. **Build first in Phase 2, and before Feature 13**, which inherits the seeding design.
+**Depends on:** Feature 7. **Build after Feature 10 and before Feature 13**, which inherits the seeding design.
 
 **Why it waits for the public beta rather than preceding it (decided 2026-08-29).** This feature is
 gated on two thresholds that the plan insists must be *measured*, and the release threshold and the

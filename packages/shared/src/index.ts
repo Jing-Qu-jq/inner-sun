@@ -99,6 +99,24 @@ export interface ChatCrisis {
 }
 
 /**
+ * The booking entry point, attached to the turn where the nudge fired (Feature 11 AC 2, 3).
+ *
+ * Present only on that one turn of a conversation, and on no other — which is what makes
+ * "at most once" (AC 1) visible in the payload rather than merely promised in prose. A client
+ * renders the card by asking whether the field exists; the readiness decision is the server's.
+ *
+ * The URL is application configuration (`BOOKING_URL`) and never passes through the language
+ * model, for the same reason Feature 9 keeps hotline numbers out of it: a model asked to
+ * "give them the booking link" produces a plausible, wrong one, and a student who clicks it
+ * has been turned away at the exact moment they decided to ask for help. The model writes the
+ * invitation in words; the app supplies the destination.
+ */
+export interface ChatBooking {
+  /** Where to book a real counselor. Rendered as a link, verbatim. */
+  url: string;
+}
+
+/**
  * One Care Pattern the retrieval step considered for a turn (Feature 22).
  * Scores are cosine similarity, 0-1. Only ever sent to a privileged viewer.
  */
@@ -194,6 +212,44 @@ export interface ChatDebugSafety {
 }
 
 /**
+ * How the booking readiness check ruled on this turn (Feature 11 AC 5).
+ *
+ * Reported on **every** turn, not only the ones that nudged. A rule-based decision that can
+ * only be inferred from the reply's wording cannot be tuned, and the interesting question is
+ * usually the opposite of the obvious one: not "why did it nudge?" but "why has it still not,
+ * eleven messages in?". So a silent turn carries the count it reached and the threshold it
+ * needed, and a suppressed one names what suppressed it.
+ *
+ * Nothing here is the student's text. `rules` carries rule identifiers, exactly as the safety
+ * trace does.
+ */
+export interface ChatDebugBooking {
+  /** True when the nudge fired on this turn. At most one turn per conversation can say so. */
+  nudged: boolean;
+  /**
+   * Which part of the readiness check was satisfied: `explicit_request`, `pattern_escalation`,
+   * `turn_count`, or `none` when nothing was.
+   */
+  signal: string;
+  /**
+   * What held the nudge back despite a signal, or when no signal was even evaluated:
+   * `crisis` (this turn), `crisis_earlier` (this conversation), `already_nudged`,
+   * `disabled` (no BOOKING_URL configured), or absent when nothing suppressed it.
+   */
+  suppressedBy?: string;
+  /** Identifiers of the "asked for a human" phrase rules that fired — never the phrase. */
+  rules: string[];
+  /** Substantive student messages so far, this turn's included. */
+  substantiveTurns: number;
+  /** How many were needed on this turn, given whether an escalating pattern matched. */
+  requiredTurns: number;
+  /** Title of the matched Care Pattern whose escalation guidance counted, when one did. */
+  escalationPattern?: string;
+  /** True when this conversation had already used its one nudge before this turn. */
+  alreadyNudged: boolean;
+}
+
+/**
  * Why the reply is what it is (Feature 22).
  *
  * Present only when the request carried a valid inspector credential; an ordinary
@@ -207,6 +263,12 @@ export interface ChatDebug {
    * discarded, and the reply was written to a different directive entirely.
    */
   safety?: ChatDebugSafety;
+  /**
+   * The booking readiness check for this turn (Feature 11). Next to safety because the two
+   * are the same kind of fact — a rule the server applied on the student's behalf — and
+   * because one of safety's jobs is to switch this one off.
+   */
+  booking?: ChatDebugBooking;
   /** What retrieval concluded: applied, below_floor, no_patterns, low_signal, failed. */
   outcome: string;
   /** True when a real situation found no pattern close enough — a Care-Pattern gap. */
@@ -259,6 +321,12 @@ export interface ChatResponse {
    * is what tells a client to show them — the judgement is the server's, not the browser's.
    */
   crisis?: ChatCrisis;
+  /**
+   * The booking entry point (Feature 11). Present only on the single turn where the nudge
+   * fired, which is what the client keys the card off — like `crisis`, the judgement is the
+   * server's and the browser only renders it.
+   */
+  booking?: ChatBooking;
   /** Retrieval internals — privileged viewers only (Feature 22). */
   debug?: ChatDebug;
 }
@@ -269,6 +337,28 @@ export interface ApiError {
     code: string;
     message: string;
   };
+}
+
+/**
+ * Public, unauthenticated configuration the browser can ask for before it has a conversation
+ * (Feature 11) — served by `GET /public-config`.
+ *
+ * The chat page never needs this: the booking link arrives attached to the turn that nudged,
+ * because the server is what decided to nudge. The **home page** does — its "Talk to a human"
+ * button has no turn to ride on. Rather than keep a second copy of the URL in the web app's
+ * build-time environment, where it could silently drift from the one the API is actually
+ * handing to students, the browser asks.
+ *
+ * Every field here is public by construction. Nothing secret, per-user or expensive belongs on
+ * it — an unauthenticated GET is the wrong place for any of those.
+ */
+export interface PublicConfig {
+  /**
+   * Where to book a real counselor, or absent when no `BOOKING_URL` is configured — in which
+   * case the booking nudge is switched off entirely and the client should fall back to
+   * whatever it did before there was a link.
+   */
+  bookingUrl?: string;
 }
 
 /** Response body for the API health check. */

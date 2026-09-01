@@ -11,14 +11,17 @@ import {
 import { config } from "../config.js";
 import {
   appendMessage,
+  claimBookingNudge,
   conversationCostUsd,
-  countMessages,
+  conversationCounts,
   createConversation,
   getConversation,
   loadHistory,
+  releaseBookingNudge,
   updateConversationLocale,
   type Conversation,
 } from "../conversations.js";
+import { assessBookingReadiness, type BookingDecision } from "../booking.js";
 import { crisisFallbackReply, crisisResources } from "../crisis-resources.js";
 import { AppError } from "../errors.js";
 import { createChatCompletion } from "../openai.js";
@@ -28,10 +31,11 @@ import {
   formatCarePatternGuidance,
   retrieveCarePatterns,
   RETRIEVAL_SKIPPED,
+  type CarePatternMatch,
   type RetrievalResult,
 } from "../retrieval.js";
 import { hasObviousCrisis, screenForCrisis, type SafetyScreenResult } from "../safety.js";
-import { recordSafetyEvent } from "../safety-events.js";
+import { conversationHadCrisis, recordSafetyEvent } from "../safety-events.js";
 import { compactHistory, planCompaction, type CompactionResult } from "../summarize.js";
 import { TurnLedger } from "../usage.js";
 
@@ -44,8 +48,10 @@ import { TurnLedger } from "../usage.js";
  * researcher-authored guidance; since Feature 8 the prompt is assembled for cost as
  * well as for quality — the static half first so OpenAI can cache it, the older half of a
  * long conversation replaced by a running summary, and every upstream call the turn made
- * priced and recorded; and since Feature 9 every message is screened for crisis signals
- * before the reply is written, which is the one decision here that outranks all the others.
+ * priced and recorded; since Feature 9 every message is screened for crisis signals
+ * before the reply is written, which is the one decision here that outranks all the others;
+ * and since Feature 11 a turn may carry the one invitation a conversation ever gets to book a
+ * real human counselor.
  *
  * A turn's shape, in order:
  *
@@ -53,9 +59,11 @@ import { TurnLedger } from "../usage.js";
  *   2. Persist the student's message — before anything upstream, so it is never lost.
  *   3. In parallel, on the cheap model: compact the history if it has overflowed, screen the
  *      message for crisis signals, and match the conversation to Care Patterns.
- *   4. Assemble the prompt and make the one expensive call — to the crisis directive instead
+ *   4. Decide, on rules alone, whether this is the turn that invites the student to book a
+ *      real counselor — and claim that nudge atomically, since a conversation only gets one.
+ *   5. Assemble the prompt and make the one expensive call — to the crisis directive instead
  *      of the ordinary one when screening fired, with the retrieved guidance dropped.
- *   5. Record what it all cost, on the assistant message and in the log.
+ *   6. Record what it all cost, on the assistant message and in the log.
  *
  * **Why screening runs alongside retrieval rather than strictly in front of it.** Feature 9
  * AC 6 describes screening as running before retrieval and overriding it, and what has to be
@@ -123,6 +131,22 @@ const chatDebugSchema = {
         classifier: { type: "string" },
         overrodeRetrieval: { type: "boolean" },
         durationMs: { type: "number" },
+      },
+    },
+    // The booking nudge (Feature 11). Beside safety, because one of safety's jobs is to
+    // switch this one off.
+    booking: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        nudged: { type: "boolean" },
+        signal: { type: "string" },
+        suppressedBy: { type: "string" },
+        rules: { type: "array", items: { type: "string" } },
+        substantiveTurns: { type: "number" },
+        requiredTurns: { type: "number" },
+        escalationPattern: { type: "string" },
+        alreadyNudged: { type: "boolean" },
       },
     },
     outcome: { type: "string" },
@@ -207,6 +231,20 @@ const chatCrisisSchema = {
   },
 } as const;
 
+/**
+ * The booking entry point (Feature 11 AC 3) — for the student rather than for an inspector,
+ * and present only on the single turn where the nudge fired. Declared as strictly as
+ * everything else here, so an ordinary turn's response cannot grow one by accident.
+ */
+const chatBookingSchema = {
+  type: "object",
+  required: ["url"],
+  additionalProperties: false,
+  properties: {
+    url: { type: "string" },
+  },
+} as const;
+
 const chatResponseSchema = {
   type: "object",
   required: ["conversationId", "reply", "locale"],
@@ -216,6 +254,7 @@ const chatResponseSchema = {
     reply: { type: "string" },
     locale: { type: "string", enum: [...LOCALES] },
     crisis: chatCrisisSchema,
+    booking: chatBookingSchema,
     debug: chatDebugSchema,
   },
 } as const;
@@ -275,7 +314,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       // How much of this conversation goes to the model word for word, and whether enough
       // has spilled past that window to be worth summarizing (Feature 8). Counted before
       // this turn's message is stored, so `history` and `message` stay disjoint.
-      const plan = planCompaction(await countMessages(conversation.id), conversation.summarizedMessageCount);
+      // Two counts, one query (see conversations.ts): the total drives Feature 8's compaction
+      // plan, and the substantive-student-message count drives Feature 11's readiness check.
+      // Both are taken before this turn's message is stored, so `history` and `message` stay
+      // disjoint and the arriving message is added by whoever needs it.
+      const counts = await conversationCounts(conversation.id, config.booking.minTurnChars);
+      const plan = planCompaction(counts.total, conversation.summarizedMessageCount);
       const history = await loadHistory(conversation.id, plan.verbatimCount);
       const userMessage: ChatMessage = { role: "user", content: message };
 
@@ -316,11 +360,28 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       // turn is otherwise indistinguishable from one where nothing matched.
       const overrodeRetrieval = screen.crisis && match.applied.length > 0;
       const guidance = screen.crisis ? "" : formatCarePatternGuidance(match.applied, conversation.locale);
+
+      // The booking nudge (Feature 11) — rules only, no model call, and deliberately after
+      // screening and matching because it reads both: a crisis turn never nudges (AC 4), and a
+      // matched pattern that carries escalation guidance lowers the bar.
+      const booking = await decideBookingNudge({
+        conversation,
+        message,
+        priorSubstantiveTurns: counts.substantiveStudentMessages,
+        applied: match.applied,
+        crisis: screen.crisis,
+        log: request.log,
+      });
+
       const promptOptions = {
         locale: conversation.locale,
         summary: compaction.summary,
         history,
         message,
+        // Carried on the shared options rather than added to the real reply alone, so the
+        // inspector's comparison reply differs from it by exactly one thing — the Care-Pattern
+        // guidance — which is the only reason that comparison means anything.
+        bookingNudge: booking.nudge,
       };
       const messages = buildChatMessages({
         ...promptOptions,
@@ -387,6 +448,24 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         "care pattern match",
       );
 
+      // Rule identifiers and counts only, never the phrase and never the message — the same
+      // discipline as the crisis screening line above. Logged on EVERY turn, silent ones
+      // included, because the question worth asking of a funnel is usually "why has it still
+      // not asked?" rather than "why did it ask?".
+      request.log.info(
+        {
+          conversationId: conversation.id,
+          nudged: booking.nudge,
+          signal: booking.signal,
+          suppressedBy: booking.suppressedBy,
+          rules: booking.rules,
+          substantiveTurns: booking.substantiveTurns,
+          requiredTurns: booking.requiredTurns,
+          escalationPattern: booking.escalationPattern,
+        },
+        "booking nudge",
+      );
+
       // Message-content-free, like every other log line here: the counts say what happened
       // to the prompt, never what was in it. A summary is derived from a student's words and
       // is treated as such.
@@ -426,6 +505,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
             : Promise.resolve(undefined),
         ]);
       } catch (err) {
+        // The nudge was claimed before this call, because the instruction had to be in the
+        // prompt. No reply reached the student, so give it back rather than let an OpenAI
+        // hiccup silently consume a conversation's one and only invitation.
+        if (booking.nudge) await releaseBookingNudge(conversation.id);
         // On an ordinary turn an upstream failure is an error the student is told about, and
         // that has been right since Feature 4. On a CRISIS turn it is not: the one moment
         // this product must not answer with "something went wrong, please try again" is the
@@ -457,6 +540,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           model: completion?.model ?? "(crisis fallback)",
           turns: history.length + 1,
           crisis: screen.crisis,
+          bookingNudge: booking.nudge,
           carePatterns: match.applied.length,
           calls: turn.calls,
           usage: turn.totals,
@@ -485,12 +569,20 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (screen.crisis) {
         response.crisis = { category: screen.category, resources: crisisResources(conversation.locale) };
       }
+      // The link itself (Feature 11 AC 3), on the one turn this conversation nudges. Attached
+      // by the server for the same reason the crisis resources are: it is the server that
+      // decided, and a browser re-deriving "was that a nudge?" from the reply's wording would
+      // be guessing at exactly the moment a student is deciding whether to click.
+      if (booking.nudge && config.booking.url) {
+        response.booking = { url: config.booking.url };
+      }
       if (inspect) {
         // Read after the turn is stored, so the figure includes this turn. One aggregate
         // over one conversation's own rows, and only for a privileged viewer.
         response.debug = buildDebug({
           screen,
           overrodeRetrieval,
+          booking,
           match,
           compaction,
           guidance,
@@ -519,6 +611,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 interface DebugInput {
   screen: SafetyScreenResult;
   overrodeRetrieval: boolean;
+  booking: BookingDecision;
   match: RetrievalResult;
   compaction: CompactionResult;
   guidance: string;
@@ -533,6 +626,7 @@ interface DebugInput {
 function buildDebug({
   screen,
   overrodeRetrieval,
+  booking,
   match,
   compaction,
   guidance,
@@ -560,6 +654,18 @@ function buildDebug({
       overrodeRetrieval,
       durationMs: screen.durationMs,
     },
+    // Reported on every turn, nudged or not. AC 5 asks for both halves — why it fired, and
+    // why it stayed silent — and the silent half is the one that actually gets tuned.
+    booking: {
+      nudged: booking.nudge,
+      signal: booking.signal,
+      ...(booking.suppressedBy ? { suppressedBy: booking.suppressedBy } : {}),
+      rules: booking.rules,
+      substantiveTurns: booking.substantiveTurns,
+      requiredTurns: booking.requiredTurns,
+      ...(booking.escalationPattern ? { escalationPattern: booking.escalationPattern } : {}),
+      alreadyNudged: booking.alreadyNudged,
+    },
     outcome: match.outcome,
     gap: match.gap,
     floor: config.retrieval.relevanceFloor,
@@ -585,6 +691,57 @@ function buildDebug({
     conversationCostUsd: Number(conversationCost.toFixed(6)),
     ...(unguided ? { replyWithoutGuidance: unguided.reply, usageWithoutGuidance: unguided.usage } : {}),
   };
+}
+
+interface BookingNudgeInput {
+  conversation: Conversation;
+  message: string;
+  priorSubstantiveTurns: number;
+  applied: CarePatternMatch[];
+  crisis: boolean;
+  log: { error: (obj: object, msg: string) => void };
+}
+
+/**
+ * Decide whether this turn nudges, and take the conversation's one nudge if it does
+ * (Feature 11 AC 1).
+ *
+ * The *policy* lives in booking.ts, deliberately as a pure function of a handful of numbers,
+ * so it can be read and argued about without a database. What lives here is the part that
+ * cannot: the claim.
+ *
+ * A decision to nudge is not the same as owning the nudge. `alreadyNudged` was read at the top
+ * of the turn, and two turns of one conversation running together would both have read it as
+ * false — so the atomic `update ... where booking_nudged_at is null` is the thing that actually
+ * makes "at most once" true, and a turn that loses that race is downgraded to a silent one with
+ * the reason recorded rather than left to nudge anyway.
+ *
+ * It is claimed BEFORE the reply is generated, because the instruction has to be in the prompt.
+ * The caller gives it back when the reply call fails.
+ */
+async function decideBookingNudge({
+  conversation,
+  message,
+  priorSubstantiveTurns,
+  applied,
+  crisis,
+  log,
+}: BookingNudgeInput): Promise<BookingDecision> {
+  const decision = await assessBookingReadiness({
+    message,
+    priorSubstantiveTurns,
+    applied,
+    crisis,
+    alreadyNudged: conversation.bookingNudgedAt !== null,
+    // A thunk, so the query only runs on the rare turn where an automatic signal has already
+    // fired — see the note on it in booking.ts.
+    hadEarlierCrisis: () => conversationHadCrisis(conversation.id, log),
+  });
+  if (!decision.nudge) return decision;
+
+  const claimed = await claimBookingNudge(conversation.id);
+  if (claimed) return decision;
+  return { ...decision, nudge: false, suppressedBy: "already_nudged", alreadyNudged: true };
 }
 
 /**

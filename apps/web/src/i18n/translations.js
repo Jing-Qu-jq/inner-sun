@@ -88,6 +88,13 @@ export const translations = {
         'chat.crisis.body':
             'You don’t have to get through this on your own. Real people are on the other end of these, day and night.',
         'chat.crisis.emergency': 'If you are in immediate danger, call your local emergency number.',
+        // The booking invitation (Feature 11). The card's copy lives here so it follows the
+        // language toggle; the link itself comes from the API with the turn, because it is
+        // application configuration and the browser has no business inventing one.
+        'chat.booking.title': 'Talk to a real counselor',
+        'chat.booking.body':
+            'If you’d like to keep going with a human — someone who works with international students — you can book a session here. No rush, and this chat isn’t going anywhere.',
+        'chat.booking.cta': 'Book a session',
 
         // Shown in place of a reply when a turn fails (Feature 5).
         'chat.error': 'Sorry, something went wrong and your message didn’t get through. Please try again in a moment.',
@@ -152,6 +159,17 @@ export const translations = {
         'inspector.safetyDegraded':
             'The classifier did not answer usably on this turn. The phrase rules still ran; the turn was not escalated on the classifier’s account.',
         'inspector.safetyNoRules': 'none',
+        // The booking readiness check (Feature 11 AC 5).
+        'inspector.bookingNudged': 'Booking nudge fired',
+        'inspector.booking': 'Booking readiness',
+        'inspector.bookingSignal': 'Signal',
+        'inspector.bookingSuppressed': 'Suppressed by',
+        'inspector.bookingTurns': 'Substantive turns (of needed)',
+        'inspector.bookingEscalation': 'Escalating pattern',
+        'inspector.bookingRules': 'Request rules fired',
+        'inspector.bookingAlready': 'Already nudged',
+        'inspector.yes': 'yes',
+        'inspector.no': 'no',
         'inspector.rejected':
             'That reply came back with no inspector data. The token is wrong, or the API is running without INSPECTOR_TOKEN set.',
 
@@ -234,6 +252,12 @@ export const translations = {
         'chat.crisis.title': '现在就能找到人帮你',
         'chat.crisis.body': '这件事你不必一个人扛。下面这些线路的另一端，随时都有真人在。',
         'chat.crisis.emergency': '如果你此刻有危险，请立即拨打当地的紧急电话。',
+        // 预约真人咨询师的邀请（功能 11）。文案放在这里，随语言切换；链接本身由 API 随本轮回复下发，
+        // 因为它属于服务端配置，浏览器不该自己编一个出来。
+        'chat.booking.title': '和真人咨询师聊聊',
+        'chat.booking.body':
+            '如果你想继续和真人聊——一位熟悉留学生处境的咨询师——可以在这里预约。不用着急，这个对话随时都在。',
+        'chat.booking.cta': '预约咨询',
 
         'chat.error': '抱歉，出了点问题，你的消息没能发送成功。请稍后再试一次。',
         'chat.error.offline': '无法连接到 InnerSun。请检查网络后再试一次。',
@@ -294,6 +318,17 @@ export const translations = {
         'inspector.safetyOverrode': '有关怀模式命中但已被丢弃——危机处理的优先级高于知识库。',
         'inspector.safetyDegraded': '本轮分类器没有给出可用的答案。短语规则仍然运行了；本轮没有因分类器而升级。',
         'inspector.safetyNoRules': '无',
+        // 预约提示的触发判断（功能 11 验收标准 5）。
+        'inspector.bookingNudged': '已发出预约提示',
+        'inspector.booking': '预约提示判断',
+        'inspector.bookingSignal': '触发信号',
+        'inspector.bookingSuppressed': '被什么拦下',
+        'inspector.bookingTurns': '有效轮次（/所需）',
+        'inspector.bookingEscalation': '带转介建议的模式',
+        'inspector.bookingRules': '触发的求助规则',
+        'inspector.bookingAlready': '此前已提示过',
+        'inspector.yes': '是',
+        'inspector.no': '否',
         'inspector.rejected': '这条回复没有带回任何检视数据：要么令牌不对，要么 API 启动时没有设置 INSPECTOR_TOKEN。',
 
         'login.title': '登录',
