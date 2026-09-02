@@ -1,7 +1,11 @@
 # Deployment
 
-**Live:** <https://innersun-admin.onrender.com> — first deployed 2026-08-16 (admin tool),
+**Live:** <https://innersun.onrender.com> — first deployed 2026-08-16 (admin tool),
 extended 2026-09-02 to the student app (Feature 24).
+
+> Renamed from `innersun-admin` on 2026-09-02, once the service served both apps.
+> **The old subdomain does not redirect** — it stops answering when that service is deleted,
+> so anyone holding an `innersun-admin.onrender.com/admin` bookmark needs the new link.
 
 This stands up **one service** — the Fastify API, which also serves the admin UI at `/admin`
 and the student chat app at `/`, both from its own origin — against a **Supabase** Postgres
@@ -110,11 +114,26 @@ DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
 ```
 
 This applies every migration in `db/migrations` — `0001` through `0007` today — and records
-each in `schema_migrations`, so re-running is a no-op. **Run it again after any deploy that
-adds one**: Render builds and starts the code, it does not touch the database, and the
-symptom of a missed migration is a runtime error on the one feature that needed the new
-column rather than a failed deploy. Feature 24 added none, so an instance already on `0007`
-needs nothing here.
+each in `schema_migrations`, so re-running is a no-op.
+
+> ### ⚠️ Run this on EVERY deploy, not only when you think a migration is new
+>
+> **Render deploys code. It never touches the database.** Nothing in the build, the start
+> command or the health check will tell you the two have drifted apart, and the symptom is
+> not a failed deploy — it is a service that starts cleanly, passes its health check, and
+> then fails at runtime on the one feature that needed the new column.
+>
+> This is not hypothetical. **It happened on the Feature 24 deploy** (2026-09-02). The
+> hosted database was still on `0004` from the Feature 17 hosting slice, while Features 8,
+> 9 and 11 had added `0005`–`0007` locally in the months since — `conversations.summarized_message_count`,
+> `messages.usage`, the `safety_events` table, `conversations.booking_nudged_at`. The deploy
+> succeeded, `/health` reported `"db":"up"` because it runs a trivial query, `/` served the
+> app, `/admin` worked — and **every single chat turn returned `503 storage_unavailable`**.
+> Three migrations and one command fixed it.
+>
+> The trap is that the person deploying knows what *this* feature added, and the gap is
+> everything that accumulated since the *last* time anyone ran this. So run it as a step,
+> unconditionally. It is a no-op when there is nothing to apply, and it prints what it did.
 
 Then load the twelve starter Care Patterns. This one needs an explicit flag, because
 seeding overwrites the starter patterns by fixed UUID and the scripts refuse to touch a
@@ -189,6 +208,13 @@ them under *Environment* and redeploy.
 `DATABASE_SSL_CA` accepts either a file path or the certificate text itself. On Render,
 paste the text: a hosting platform takes environment variables easily and files awkwardly.
 
+> **Renaming the service is not a dashboard edit.** Render will not let you change a name the
+> blueprint owns, and changing `name:` in `render.yaml` makes Render create a *new* service:
+> new URL, every `sync: false` secret re-entered by hand, and the old service left running
+> until you delete it. The database is Supabase, so Care Patterns, admin accounts and
+> conversations are untouched by any of it. Done once, on 2026-09-02, while the preview link
+> had gone to nobody — the same change after the link circulates breaks live bookmarks.
+
 **Do not set `API_HOST`.** The service binds `0.0.0.0` automatically when the platform
 provides `PORT`; a stray `API_HOST` would bind loopback, and the failure mode is a service
 that starts cleanly, logs nothing wrong, and times out its health check with no
@@ -226,7 +252,7 @@ gets a reply, the reply is grounded in a Care Pattern, a crisis message is scree
 student who asks for a human is handed a link, and both languages work:
 
 ```bash
-npm run preview:smoke -- --base https://innersun-admin.onrender.com --inspector-token "$INSPECTOR_TOKEN"
+npm run preview:smoke -- --base https://innersun.onrender.com --inspector-token "$INSPECTOR_TOKEN"
 ```
 
 It talks to the deployed instance over HTTP and nothing else — no database connection, no
@@ -243,10 +269,16 @@ skips the two booking checks on an instance with no `BOOKING_URL` rather than fa
 A free instance takes ~50 seconds to wake, so the first request is slow rather than broken;
 the script waits 90 seconds before giving up.
 
+**If the chat checks fail with `503` while everything else passes, run the migrations** (step
+2 above) before looking anywhere else. `503 storage_unavailable` on every turn, with
+`/health` still reporting `"db":"up"`, is the signature of a hosted database that has fallen
+behind `db/migrations` — the health check runs a trivial query and does not touch the columns
+a chat turn needs.
+
 The individual pieces, if you want them by hand:
 
 ```bash
-BASE=https://innersun-admin.onrender.com
+BASE=https://innersun.onrender.com
 
 curl -s $BASE/health                                     # {"status":"ok", … "db":"up"}
 curl -s -o /dev/null -w "%{http_code}\n" $BASE/            # 200 — the student app
@@ -328,9 +360,9 @@ belongs to **Feature 21**:
   `X-Robots-Tag` header the API sends on every response. All three come off together.
 - **Cosmetic defects ship on purpose**: the Login modal collects a password and discards it,
   the team page is placeholder profiles, `/privacy` and `/terms` are dead links.
-- **No custom domain.** The URL still says `innersun-admin`, which is historical — Render
-  keys a blueprint's services by name, so renaming the service would destroy it and create a
-  new one at a new URL.
+- **No custom domain.** The URL is still an `onrender.com` subdomain. The service itself was
+  renamed from `innersun-admin` to `innersun` on 2026-09-02, once it served both apps — but
+  that is as far as a free Render subdomain goes.
 
 ---
 

@@ -182,6 +182,8 @@ The comparison switch costs a second `gpt-4o` call on the turns you use it for.
 
 ## Deployment (Feature 24 — private preview)
 
+**Live:** <https://innersun.onrender.com> (admin tool at `/admin`).
+
 One Render service serves everything from one origin: the student app at `/`, the researcher
 admin tool at `/admin`, and the API. `POST /chat` is on there behind a per-IP rate limit and a
 daily spend ceiling, and the whole origin is `noindex` — it is an unadvertised preview for one

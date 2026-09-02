@@ -565,7 +565,8 @@ itself costs the same as any other turn plus about 95 tokens of directive.
 
 ---
 
-## Feature 24: Private preview — take the site online for the co-owner 🟡 (built and verified locally; the deploy itself is yours to do)
+## Feature 24: Private preview — take the site online for the co-owner ✅ (done — deployed and verified live, 2026-09-02)
+**Live:** <https://innersun.onrender.com>
 Put the student-facing app on a real URL that the co-owner can use on her own time, unsupervised,
 and screenshot for incubator applications. **Not public** — just not advertised. **Depends on:**
 Features 9 and 11 — **both now done, so this is the next feature to build.** Feature 10 was moved out
@@ -593,8 +594,9 @@ all at the same time, on the same deployed instance.
 2. ✅ **The student app is served from the same origin as the API**, exactly as the admin UI already is
    at `/admin`. One URL, and CORS stops being a consideration. The CRA `homepage` field is left
    pointing at GitHub Pages and overridden per-build instead — see below.
-3. 🟡 **`ENABLE_CHAT_ROUTES=true`** on the Render instance, behind AC 1. Set in `render.yaml`;
-   takes effect on the next deploy.
+3. ✅ **`ENABLE_CHAT_ROUTES=true`** on the Render instance, behind AC 1. Set in `render.yaml`, and
+   the blueprint synced it on merge — the deployed build command picked up `build:web:hosted` in
+   the same sync, which is how we knew the service was blueprint-managed rather than hand-configured.
 4. ✅ **`noindex`** so the preview does not turn up in search results. This is what "private" means
    here — there is no login, and there does not need to be one. Three layers: the meta tag, a
    `robots.txt`, and an `X-Robots-Tag` header on every response the API sends.
@@ -603,12 +605,19 @@ all at the same time, on the same deployed instance.
    allowed. It is the thing that makes the differentiator visible in a screenshot: a live chat hides
    the fact that a reply is grounded in researcher-authored guidance. Treat the token as rotatable —
    it grants read access to the Care Pattern library's titles, scores and guidance text. Declared as
-   a `sync: false` secret in `render.yaml`; verified end to end against a built server.
-6. 🟡 **A smoke test passes against the deployed instance**, not localhost: chat → Care-Pattern match →
-   crisis path → both languages. **Written and passing — against a locally built server, which is
-   not what this AC asks for.** `npm run preview:smoke -- --base <url>` is the check; it talks to a
-   running instance over HTTP and nothing else, so the same command proves the deployment once the
-   deployment exists. ~~booking entry point~~ — dropped with AC 7 below.
+   a `sync: false` secret in `render.yaml`, and **verified in production** on 2026-09-02: the token
+   unlocked the debug payload, three patterns applied against the *hosted* library — Homesickness &
+   cultural adjustment at 0.7308, Making friends & social belonging at 0.6665, Strain on a
+   long-distance relationship at 0.6101 — and the comparison reply came back, which is the affordance
+   most likely to be quietly refused by a limit since it costs a second `gpt-4o` call.
+6. ✅ **A smoke test passes against the deployed instance**, not localhost: chat → Care-Pattern match →
+   crisis path → both languages. `npm run preview:smoke -- --base <url>` talks to a running instance
+   over HTTP and nothing else. Passed against production on 2026-09-02: chat answered, the crisis
+   message screened as `self_harm` with four resources attached, the Chinese turn came back in
+   Chinese with the locale echoed, and the rate limiter reported its per-client budget. A second run
+   with `--inspector-token` added the Care-Pattern and inspector checks, so **every check the script
+   makes has now passed against the deployed instance** — the two it skips are the booking pair,
+   switched off by AC 7 below rather than broken. ~~booking entry point~~ — dropped with AC 7 below.
 7. ~~**`BOOKING_URL` is set to a real scheduling link.**~~ **Cut on 2026-09-02: the practice does not
    have one yet.** Feature 11 ships with the nudge switched off when `BOOKING_URL` is unset —
    deliberately, because an invitation with nowhere to go is worse than none — so this is a
@@ -623,10 +632,17 @@ link, but no funnel either. So **the reviewer will not see the funnel half of th
 is worth saying out loud to her rather than letting her wonder where it went. Setting the variable
 in Render and redeploying is the whole of switching it on later; nothing else changes.
 
-**What is left is the part only a human can do.** The code, the blueprint and the check are done;
-what remains is pasting one value — `INSPECTOR_TOKEN` — into Render's dashboard, letting it
-redeploy, and running the smoke test against the result. [`DEPLOYMENT.md`](DEPLOYMENT.md) has the
-steps.
+**The defect this feature found, which had nothing to do with this feature.** The first smoke test
+against production failed every chat check with `503 storage_unavailable` while `/health` still
+reported `"db":"up"`, `/` served the app and `/admin` worked. **The hosted database was still on
+migration `0004`**, left there by the Feature 17 hosting slice, while Features 8, 9 and 11 had added
+`0005`–`0007` locally in the months since. Render deploys code and never touches the database, and
+nothing in a build, a start command or a health check reports the drift — the health check runs a
+trivial query that touches none of the missing columns. Three migrations and one command fixed it.
+
+This is the shape of the whole risk of deploying late: the gap is not what *this* feature added, it
+is everything accumulated since the last time anyone ran the migrations. `DEPLOYMENT.md` now says to
+run them unconditionally on every deploy, and names this failure so the next person recognises it.
 
 **Two bounds on `POST /chat`, because one is not enough.** A per-IP rate limit (40 requests per 10
 minutes, deliberately generous — it exists to stop one client looping the endpoint, and it is the
@@ -837,7 +853,7 @@ Retiring — a Care Pattern or an FAQ answer — now opens a confirmation naming
 
 The change is a three-state `status` column replacing the boolean `is_active`, not merely a flipped default — with a boolean, `false` would have meant two unrelated things ("not written yet" and "withdrawn because it was wrong"), the UI would have had to label a brand-new draft "retired", and nothing could tell them apart when reviewing the library. Two consequences worth carrying: **the seed sets `status` explicitly** rather than relying on the column default, so the starter set is live by deliberate choice and nothing becomes retrievable by omission; and **publishing an unindexed pattern is refused with a 409**, since a `published` row with no usable vector would look live while being unreachable — the same silent failure `needs_embedding` exists to prevent. Verified end to end: a new pattern came back `draft` and left `db:verify` at 12 published, publishing moved it to 13, the audit recorded `create` then `publish`, and a pattern flagged `needs_embedding` was refused publication.
 
-**✅ Deployed 2026-08-16 — <https://innersun-admin.onrender.com/admin>.** Supabase holds the schema and the twelve starter patterns; Render serves the API and admin UI. Smoke test passed: `db: "up"`, `/admin/` 200, `/admin/api/*` 401, **`POST /chat` 404**, `http://` redirecting to `https://`, and the login rate limiter reporting a per-client budget rather than a shared one. Semantic retrieval against Supabase returned scores identical to local to four decimal places — embeddings are deterministic per model, so that is proof the vectors survived the move intact.
+**✅ Deployed 2026-08-16 — then at `innersun-admin.onrender.com/admin`, and since the 2026-09-02 rename at <https://innersun.onrender.com/admin>.** Supabase holds the schema and the twelve starter patterns; Render serves the API and admin UI. Smoke test passed: `db: "up"`, `/admin/` 200, `/admin/api/*` 401, **`POST /chat` 404**, `http://` redirecting to `https://`, and the login rate limiter reporting a per-client budget rather than a shared one. Semantic retrieval against Supabase returned scores identical to local to four decimal places — embeddings are deterministic per model, so that is proof the vectors survived the move intact.
 
 **Three deploys failed first, each for a different reason, and each is a lesson about verifying against the real environment rather than a local approximation:**
 - **TypeScript 4.9.5.** `react-scripts` in `apps/web` depends on it and npm hoisted *that* to the root, while the four TypeScript workspaces each got 5.9.3 nested. Locally the nested copy wins on `PATH`, so it built here every time; under `npm ci` the root copy won. Fixed by declaring `typescript` at the root, which leaves react-scripts' 4.9.5 nested under `apps/web` where it belongs.
@@ -943,9 +959,11 @@ from deploying, and is why this feature still exists.
 2. ✅ *(delivered by the Feature 17 hosting slice)* Managed Postgres (**Supabase**) with migrations
    run and env/secrets configured.
 3. Custom domain + HTTPS (e.g. `app.innersun.com`); optional: keep GitHub Pages for a static
-   marketing page. **This is the only way the URL stops saying `innersun-admin`** — Render keys a
-   blueprint's services by name, so renaming the service in `render.yaml` would destroy it and
-   create a new one at a new URL, breaking every link already handed out. Attach a domain instead.
+   marketing page. The service was renamed `innersun-admin` → `innersun` on 2026-09-02, which is as
+   far as a free `onrender.com` subdomain goes; note that Render keys a blueprint's services by name,
+   so that rename meant creating a new service and re-entering every secret. It was cheap only
+   because no link had circulated yet. A custom domain is the last URL change, and the one that
+   costs nothing to make later.
 4. A smoke test passes in production: register → chat → match → safety → nudge → (bilingual) all
    work. *(`npm run preview:smoke` from Feature 24 covers chat → match → safety → bilingual. Two
    steps are still open here: `register`, which needs Feature 12, and `nudge`, which needs a real
