@@ -10,17 +10,19 @@
 # reviewer, unadvertised and unindexed — and what replaces that switch is the pair of limits
 # below: a per-IP rate limit and a daily spend ceiling for the whole instance.
 #
-# The service is still named `innersun-admin` because Render keys a blueprint's services by
-# name: renaming it here would destroy this service and create a new one at a new URL,
-# breaking the researcher's bookmark and every link already handed out. The name is now
-# historical. A real domain is Feature 21's job.
+# The service was called `innersun-admin` until 2026-09-02, from the months when it served only
+# the researcher tool. Renamed here rather than in Render's dashboard, which refuses to edit a
+# name the blueprint owns — and a name change IS a new service to Render, so the rename cost
+# re-entering every `sync: false` secret and deleting the old one. Done deliberately while the
+# preview link had gone to nobody; the same change a week later would break live bookmarks.
+# A real domain is still Feature 21's job.
 #
 # The database is Supabase, not a Render Postgres: see docs/DEPLOYMENT.md for why, and for
 # the steps only a human can do (creating the accounts, pasting the secrets).
 
 services:
   - type: web
-    name: innersun-admin
+    name: innersun
     runtime: node
     plan: free
     # Free instances spin down when idle, so the first request after a quiet period takes

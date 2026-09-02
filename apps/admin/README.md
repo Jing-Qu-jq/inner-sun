@@ -8,7 +8,7 @@ It is a Vite + React + TypeScript app, and in production it is **served by the A
 at `/admin` from the same origin. That is deliberate — the session cookie then needs no
 CORS and no cross-site cookie handling — so the local setup below tries to preserve it.
 
-Deployed at <https://innersun-admin.onrender.com/admin>. See
+Deployed at <https://innersun.onrender.com/admin>. See
 [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md).
 
 ---
