@@ -6,8 +6,8 @@
 
 ## How to use this plan
 - Work one feature at a time. A feature is **done** only when all its AC pass.
-- **Everything runs on `localhost`** until Feature 24, with one earlier exception (below). *(Amended 2026-08-29: this plan originally deferred all deployment to Feature 21, the last feature. It no longer does — see Feature 24.)*
-- The current prototype stays on GitHub Pages untouched until then.
+- **Everything ran on `localhost`** until Feature 24, with one earlier exception (below). *(Amended 2026-08-29: this plan originally deferred all deployment to Feature 21, the last feature. It no longer does — see Feature 24.)* Since Feature 24 the student app is hosted too, on an unadvertised `noindex` URL; **local-first is still how features get built and verified**, and the deployed instance is where a finished one is shown.
+- The original prototype stays on GitHub Pages, untouched — `npm run deploy:web` still publishes it. It is now the older of two live surfaces and not the one to demo; the hosted preview is.
 - ✅ = done and verified · 🟡 = in progress · 🟢 = in V1 scope, not started. Anything marked *Future* in the architecture is intentionally out of scope here.
 - **Features are not strictly in build order.** Feature 17 was pulled forward from Phase 3, Feature 22 was added and built straight after Feature 7, Feature 23 was added mid-Phase-1 and has since moved into Phase 2, Feature 10 moved from Phase 1 to the head of Phase 2 so its canned answers can be written from real preview traffic rather than guessed, and Feature 24 was added at the end of Phase 1 to put the site on a private URL early. The reason is recorded in each one's own section. Check each feature's status marker rather than assuming the numbering is the sequence.
 
@@ -29,8 +29,8 @@ plus the database it writes to are hosted early** — see Feature 17 for the ful
 Scoped as narrowly as possible: the hosted service serves the admin UI and its API and
 nothing else. `POST /chat` is switched off there (`ENABLE_CHAT_ROUTES=false`), the student
 chat app stays on localhost, and the GitHub Pages prototype is untouched. Everything else
-in this plan is still built and verified locally until Feature 24 turns that endpoint back on
-behind a rate limit.
+in this plan was built and verified locally until **Feature 24 turned that endpoint back on**,
+behind a per-IP rate limit and a daily spend ceiling, and put the student app on the same origin.
 
 ## Stack decisions (locked for V1)
 - **Frontend:** the existing React SPA (`inner-sun`), cleaned up and wired to our own backend.
@@ -39,7 +39,7 @@ behind a rate limit.
 - **AI:** OpenAI — `gpt-4o` (reply), `gpt-4o-mini` (classify/safety/summarize/normalize), `text-embedding-3-small`.
 - **Repo:** single **monorepo** (`web` / `api` / `db` / `shared`), per the architecture discussion.
 - **Languages:** English + 简体中文 from the start (extensible).
-- **Eventual hosting:** frontend beside backend — **deferred to the last feature**, except the Feature 17 admin slice noted above.
+- **Hosting: frontend beside backend, one origin — ✅ delivered by Feature 24**, not deferred to the last feature after all. One Render service serves the student app at `/`, the researcher admin tool at `/admin`, and the API; there is no second deployment and no CORS between them. What is left for Feature 21 is a **custom domain**, not a move.
 - **Managed Postgres: Supabase** (chosen 2026-08-15 for the Feature 17 slice). It was already the direction this plan assumed — the Feature 3 migration comments anticipate reconciling `users` with `auth.users`, and Feature 12 plans to use its Auth — so picking it now means Feature 21 inherits the work rather than redoing it. Migrations are plain SQL and port unchanged. **Render** hosts the admin service; free instances spin down when idle, so the first load after a break is slow.
 
 ---
@@ -289,13 +289,15 @@ This leaks nothing: someone guessing tokens can already see that no panel appear
 **It stays switched on in production** (decided 2026-08-29). It is not development scaffolding to
 be stripped at deployment: a live chat *hides* the thing that makes this product different, because
 a reply grounded in researcher-authored guidance looks like any other chatbot's, and the compare
-toggle is what shows the difference. Feature 24 AC 6 carries what that costs — a real
+toggle is what shows the difference. Feature 24 AC 5 carries what that costs — a real
 `INSPECTOR_TOKEN` on the hosted API, a rate limit that does not throttle a demo, and a token treated
 as rotatable, since it grants read access to the Care Pattern library's titles, scores and guidance.
 
 **The inspector is meant to keep growing.** Every feature that adds a *decision* to a turn should surface that decision here, because the argument for showing why a reply was Care-Pattern-grounded applies equally to everything else the server decides on a student's behalf. Concretely: ✅ Feature 8's prompt assembly and token budget (delivered — the panel now shows how many messages went in full versus were replaced by the summary, the summary text itself, every upstream call with its model and tokens, and what the turn and the conversation have cost), ✅ Feature 9's crisis detection (delivered — the panel now shows which detector fired, the category, the classifier's label, the rule ids, and an explicit line when a Care-Pattern match was overridden), and **Feature 11's booking nudge — why it fired on this turn**. Each is additive and cheap: extend `ChatDebug` in `packages/shared`, the response schema in `services/api/src/routes/chat.ts`, and the panel in `apps/web/src/components/Chat/Inspector.js`. The gate itself never changes, and when Feature 12 brings real accounts the token gives way to a role check with the payload untouched.
 
 **Not done here, on purpose:** the rows *later* features will add, since the decisions they show do not exist yet. Features 8, 9 and 11 have each since added theirs, which is the pattern working as intended.
+
+**Feature 24 is the exception that clarifies the rule.** Its rate limit and daily spend ceiling are decisions the server makes on a student's behalf, and neither adds a row here — because a refused turn produces no reply to attach a panel to. The rule is about explaining the reply you got, not about narrating requests that never became replies. Those two report themselves at startup and in the response's own error code (`rate_limited`, `chat_budget_exhausted`), which is where they can actually be read.
 
 ## Feature 8: Prompt assembly + cost controls 🟡 (built and verified live; prompt caching needs real traffic to confirm)
 Assemble the final prompt and keep per-conversation cost low.
@@ -457,8 +459,12 @@ The whole point of the funnel: convert trust into a booking.
    this codebase — reaches the student two ways: as a card under the reply on the turn that nudged
    (`apps/web/src/components/Chat/BookingInvite.js`), and as the home page's **"Talk to a human"**
    button, which used to scroll down to the placeholder counselor profiles and now leads somewhere
-   real. Verified in a real browser in both languages. **Outstanding: the link is currently a
-   placeholder** and a real one is needed before Feature 24 puts the app in front of the co-owner.
+   real. Verified in a real browser in both languages. **The private preview ships with no link at
+   all** (decided 2026-09-02 — the practice does not have one yet, so Feature 24 dropped its AC 7).
+   With `BOOKING_URL` unset the nudge never fires and the home page button falls back to scrolling
+   to the team section, so **this AC is met in code and switched off in production** until a real
+   scheduling link exists. That is the designed behaviour rather than a regression: an invitation
+   with nowhere to go is worse than none.
 4. ✅ **Never during a crisis flow**, and enforced twice over. On a crisis turn the check refuses
    outright — verified live: a disclosure mid-conversation reported `suppressedBy: crisis` even
    though the student had explicitly asked for a counselor two turns earlier — and the crisis
@@ -559,7 +565,7 @@ itself costs the same as any other turn plus about 95 tokens of directive.
 
 ---
 
-## Feature 24: Private preview — take the site online for the co-owner 🟢
+## Feature 24: Private preview — take the site online for the co-owner 🟡 (built and verified locally; the deploy itself is yours to do)
 Put the student-facing app on a real URL that the co-owner can use on her own time, unsupervised,
 and screenshot for incubator applications. **Not public** — just not advertised. **Depends on:**
 Features 9 and 11 — **both now done, so this is the next feature to build.** Feature 10 was moved out
@@ -581,29 +587,81 @@ researchers calibrate the Care Pattern library against real conversations, and b
 all at the same time, on the same deployed instance.
 
 **AC:**
-1. **`POST /chat` is rate limited** (a slice of Feature 20 AC 1). The one hard blocker: the endpoint
+1. ✅ **`POST /chat` is rate limited** (a slice of Feature 20 AC 1). The one hard blocker: the endpoint
    is unauthenticated and spends real OpenAI money, and being unadvertised is not a cost control.
-   Must leave headroom for a demo — see AC 5.
-2. **The student app is served from the same origin as the API**, exactly as the admin UI already is
-   at `/admin`. One URL, and CORS stops being a consideration. Note the CRA `homepage` field is set
-   to the GitHub Pages path and will need changing.
-3. **`ENABLE_CHAT_ROUTES=true`** on the Render instance, behind AC 1.
-4. **`noindex`** so the preview does not turn up in search results. This is what "private" means
-   here — there is no login, and there does not need to be one.
-5. **The retrieval inspector still works** (decided 2026-08-29 — see Feature 22). `INSPECTOR_TOKEN`
+   Must leave headroom for a demo — see AC 5. **Two bounds, not one** — see below.
+2. ✅ **The student app is served from the same origin as the API**, exactly as the admin UI already is
+   at `/admin`. One URL, and CORS stops being a consideration. The CRA `homepage` field is left
+   pointing at GitHub Pages and overridden per-build instead — see below.
+3. 🟡 **`ENABLE_CHAT_ROUTES=true`** on the Render instance, behind AC 1. Set in `render.yaml`;
+   takes effect on the next deploy.
+4. ✅ **`noindex`** so the preview does not turn up in search results. This is what "private" means
+   here — there is no login, and there does not need to be one. Three layers: the meta tag, a
+   `robots.txt`, and an `X-Robots-Tag` header on every response the API sends.
+5. ✅ **The retrieval inspector still works** (decided 2026-08-29 — see Feature 22). `INSPECTOR_TOKEN`
    set as a real secret, AC 1's limiter not throttling a demo, and the comparison reply still
    allowed. It is the thing that makes the differentiator visible in a screenshot: a live chat hides
    the fact that a reply is grounded in researcher-authored guidance. Treat the token as rotatable —
-   it grants read access to the Care Pattern library's titles, scores and guidance text.
-6. **A smoke test passes against the deployed instance**, not localhost: chat → Care-Pattern match →
-   crisis path → booking entry point → both languages.
-7. **`BOOKING_URL` is set to a real scheduling link.** Feature 11 ships with the nudge switched off
-   when it is unset — deliberately, because an invitation with nowhere to go is worse than none —
-   so AC 6's booking step cannot pass until the practice's actual link exists. It is a `sync: false`
-   env var on the Render service, alongside `INSPECTOR_TOKEN`; `render.yaml` declares neither yet
-   because that blueprint is still the admin-only instance with `ENABLE_CHAT_ROUTES=false`.
+   it grants read access to the Care Pattern library's titles, scores and guidance text. Declared as
+   a `sync: false` secret in `render.yaml`; verified end to end against a built server.
+6. 🟡 **A smoke test passes against the deployed instance**, not localhost: chat → Care-Pattern match →
+   crisis path → both languages. **Written and passing — against a locally built server, which is
+   not what this AC asks for.** `npm run preview:smoke -- --base <url>` is the check; it talks to a
+   running instance over HTTP and nothing else, so the same command proves the deployment once the
+   deployment exists. ~~booking entry point~~ — dropped with AC 7 below.
+7. ~~**`BOOKING_URL` is set to a real scheduling link.**~~ **Cut on 2026-09-02: the practice does not
+   have one yet.** Feature 11 ships with the nudge switched off when `BOOKING_URL` is unset —
+   deliberately, because an invitation with nowhere to go is worse than none — so this is a
+   supported state rather than a degradation, and waiting on a link that does not exist would hold
+   up everything the preview is actually for. The variable is still declared as a `sync: false` env
+   var in `render.yaml` next to `INSPECTOR_TOKEN`, ready for the day there is a value to paste.
+
+**What the preview ships without, as a result.** No conversation invites a student to book a human,
+and the smoke test skips that step rather than failing it. On the home page the "Talk to a human"
+button falls back to scrolling to the team section instead of pointing at a scheduler — no dead
+link, but no funnel either. So **the reviewer will not see the funnel half of the product**, which
+is worth saying out loud to her rather than letting her wonder where it went. Setting the variable
+in Render and redeploying is the whole of switching it on later; nothing else changes.
+
+**What is left is the part only a human can do.** The code, the blueprint and the check are done;
+what remains is pasting one value — `INSPECTOR_TOKEN` — into Render's dashboard, letting it
+redeploy, and running the smoke test against the result. [`DEPLOYMENT.md`](DEPLOYMENT.md) has the
+steps.
+
+**Two bounds on `POST /chat`, because one is not enough.** A per-IP rate limit (40 requests per 10
+minutes, deliberately generous — it exists to stop one client looping the endpoint, and it is the
+only limit a real person could meet, so it is sized for a live demo with the inspector's comparison
+switch on). And a **daily spend ceiling for the whole instance** ($5/day, about 120 conversations at
+the measured cost), because a per-IP limit says nothing at all about a hundred IPs and "unadvertised"
+is not a cost control. The ceiling is denominated in the same estimated dollars the log line and the
+inspector already quote, and it is counted **in memory** — a restart resets it, which is a real
+limitation and the right trade at one free instance. Both are declared with values in `render.yaml`
+rather than left to code defaults, so what the instance may spend is reviewable in the repository.
+Both were verified by tripping them: the 41st request in a window returns 429 in the API's own error
+envelope, and a turn past the ceiling returns 503 `chat_budget_exhausted`, which the chat page
+renders as "InnerSun is busy right now."
+
+**The GitHub Pages build is untouched.** `apps/web/package.json` still carries `homepage` pointing at
+the Pages path, and `npm run build:web` still produces that bundle. The hosted build is a second
+script, `build:web:hosted`, which overrides `PUBLIC_URL` and points `REACT_APP_API_BASE_URL` at `/`.
+This is the failure worth naming: a bundle built the wrong way serves its HTML perfectly and then
+asks the browser for `/inner-sun/static/…`, which 404s into a blank page with no error anywhere on
+the server. The smoke test follows one asset for real rather than trusting the HTML came back 200.
+
+**Verified locally, against the built artefacts rather than the dev servers** (2026-09-02): the API
+serving `dist/web`, `/` returning the app with its assets resolving, `/admin/` still 200 and
+`/admin/api/*` still 401, `X-Robots-Tag` on every path including the static ones, and a real message
+sent from a browser at `http://127.0.0.1:3001` reaching that same process — one origin, no CORS. The
+smoke test passed all 19 of its checks, including a Care-Pattern match applied at 0.73, a crisis
+message screened as `self_harm` with four resources attached, and a Chinese turn answered in
+Chinese. The two booking checks were run with a placeholder `BOOKING_URL` to prove that path still
+works, and they skip when it is unset — which, after AC 7 was cut, is how the preview will run.
 
 **Scheduled immediately after this feature goes up — reminders, not blockers:**
+- **A real `BOOKING_URL`**, once the practice has a scheduling link. Until it exists the booking
+  nudge never fires, which means Feature 11 — the business half of the product — is switched off on
+  the preview, and Feature 19 has no conversion data to calibrate its thresholds against. It must
+  exist before the public launch: the whole funnel argument in ARCHITECTURE.md §6 rests on it.
 - **The crisis resource list gets a researcher's review** (the outstanding item from Feature 9,
   `services/api/src/crisis-resources.ts`). It ships unreviewed because the reviewer is a co-owner
   who knows it, but it must not still be unreviewed when strangers arrive in Feature 21.
@@ -817,7 +875,7 @@ The first two were only reproducible by wiping every `node_modules` and running 
 **Dify was evaluated and declined.** It was suggested as a free, ready-made authoring UI. Two findings settled it: its external-knowledge integration is **retrieval-only** ("Dify only has retrieval access to external knowledge bases. It cannot modify or manage your external content"), so it cannot author into our Postgres — the content would have to relocate into Dify — and the Q&A segmentation mode that maps closest to our situation→strategies structure is **self-hosted only**, which means running a nine-service stack rather than the one Fastify service this plan deploys. The document-chunk model would also flatten away `source_refs`, `escalation` and `locale_notes`. The embedding cost it would have saved is around a thousandth of a cent for the full starter set. Dify remains a reasonable prototyping surface for Feature 7's retrieval tuning; it is not the home for the knowledge base.
 
 **Deliberate deviations from the standing rules,** both scoped as narrowly as possible:
-- **Something deploys before Feature 21** — the hosted database, the API and the admin UI only. The student chat app stays on localhost and the GitHub Pages prototype is untouched.
+- **Something deploys before Feature 21** — the hosted database, the API and the admin UI only. The student chat app stays on localhost and the GitHub Pages prototype is untouched. *(Superseded by Feature 24, which extended this same service to serve the student app and turned `POST /chat` back on. The narrow scope above describes what Feature 17 shipped, not what is running now.)*
 - **`POST /chat` is not served on the hosted admin instance** (`ENABLE_CHAT_ROUTES=false`). An open, unauthenticated, token-spending chat endpoint on the public internet is the one thing this slice must not create. It also means the hosted service cannot run up an OpenAI bill: its only upstream call is one embedding when someone clicks Save.
 
 Admin auth is deliberately **separate from Feature 12**: students are anonymous-first, admins are a closed list of two or three people, and coupling them would block this behind an unbuilt feature for no benefit.
@@ -843,7 +901,7 @@ Make it credible for investors and users.
 ## Feature 20: Hardening 🟢
 **Depends on:** all core features.
 **AC:**
-1. Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed). *(Partly in place already: `@fastify/rate-limit` is registered opt-in — global off — and applied to the credential-checking routes, the admin login and password change and the Feature 22 `GET /inspect` check, at 10 per 15 minutes. What remains is `POST /chat` itself, which is the expensive one and the reason `ENABLE_CHAT_ROUTES` is off on the hosted instance until this lands. **AC 1 is taken by Feature 24**, which cannot go live without it; the rest of this feature stays here.)*
+1. ✅ Rate limiting + abuse protection on the chat/API (free anonymous usage can't be farmed). **Taken by Feature 24 and delivered there**, since the preview could not go live without it: `POST /chat` now carries a per-IP rate limit *and* a daily spend ceiling for the whole instance, on top of the opt-in limiter that already covered the credential-checking routes — the admin login and password change and the Feature 22 `GET /inspect` check, at 10 per 15 minutes. What is still open here is the rest of "abuse protection" beyond rate limiting, which strangers make relevant and one known reviewer does not.
 2. Input validation and safe error handling across the API.
 3. Secrets managed via env/secret store; no secrets in code or client.
 4. Automated tests for the critical paths (matching, safety screening, auth).
@@ -885,9 +943,14 @@ from deploying, and is why this feature still exists.
 2. ✅ *(delivered by the Feature 17 hosting slice)* Managed Postgres (**Supabase**) with migrations
    run and env/secrets configured.
 3. Custom domain + HTTPS (e.g. `app.innersun.com`); optional: keep GitHub Pages for a static
-   marketing page.
+   marketing page. **This is the only way the URL stops saying `innersun-admin`** — Render keys a
+   blueprint's services by name, so renaming the service in `render.yaml` would destroy it and
+   create a new one at a new URL, breaking every link already handed out. Attach a domain instead.
 4. A smoke test passes in production: register → chat → match → safety → nudge → (bilingual) all
-   work. *(Feature 24 covers all of this except `register`, which needs Feature 12.)*
+   work. *(`npm run preview:smoke` from Feature 24 covers chat → match → safety → bilingual. Two
+   steps are still open here: `register`, which needs Feature 12, and `nudge`, which needs a real
+   `BOOKING_URL` — the preview ships without one, and the script skips that check rather than
+   failing it.)*
 5. ✅ *(delivered by the Feature 17 hosting slice)* Rollback/redeploy process documented.
 6. **The `noindex` from Feature 24 AC 4 is removed** — this is the moment the site stops being
    private, and it is one line that is very easy to leave in place by accident.
@@ -915,7 +978,7 @@ deployment. By the time it is reached the app has been running publicly-reachabl
 interesting questions are the ones the preview raised — where the rate limit sat, what the Care
 Pattern calibration showed against real conversations, and whether the crisis path behaved.
 
-**One decision to revisit here:** the student app will need `WEB_ORIGIN` set for CORS, or — better, and what Feature 21 AC 1 actually asks for — it should be served from the same origin as the API, exactly as the admin UI already is, at which point CORS stops being a consideration at all.
+**That decision is settled.** This section used to ask whether the student app should get a `WEB_ORIGIN` for CORS or be served from the API's own origin. Feature 24 did the second, exactly as the admin UI already was, so there is no cross-origin request left to configure and `WEB_ORIGIN` matters only to local development.
 
 ---
 

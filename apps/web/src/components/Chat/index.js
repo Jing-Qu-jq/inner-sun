@@ -30,6 +30,12 @@ const ERROR_MESSAGE_KEYS = {
     network_error: 'chat.error.offline',
     timeout: 'chat.error.timeout',
     upstream_rate_limited: 'chat.error.busy',
+    // Our own limits rather than OpenAI's (Feature 24): `rate_limited` is this browser
+    // sending faster than the per-IP allowance, `chat_budget_exhausted` is the instance
+    // reaching its ceiling for the day. Both share the "busy, try again shortly" wording —
+    // the remedy is the same and the difference is ours, not the student's.
+    rate_limited: 'chat.error.busy',
+    chat_budget_exhausted: 'chat.error.busy',
 };
 
 function Chat() {

@@ -140,11 +140,13 @@ guidance section is still empty.
 | `npm run dev:api` | Run only the API |
 | `npm run dev:admin` | Vite dev server for the admin tool on :3002 (needs `dev:api` too) |
 | `npm run build:shared` | Compile `packages/shared` types |
-| `npm run build:web` | Production build of the web app |
+| `npm run build:web` | Production build of the web app, for GitHub Pages (uses the `homepage` path) |
+| `npm run build:web:hosted` | Production build for the deployed instance — served from the API's own origin |
 | `npm run build:admin` | Build the admin tool; `build:api` copies it into the API's `dist/public` |
-| `npm run build:api` | Compile the API to `services/api/dist` |
+| `npm run build:api` | Compile the API to `services/api/dist`, copying both UI bundles in |
 | `npm run admin:create` | Create an admin account (`-- --email … --name … [--role admin]`) |
 | `npm run retrieval:calibrate` | Score labelled cases through the live RAG pipeline and recommend the relevance floor |
+| `npm run preview:smoke` | Walk a deployed instance end to end (`-- --base <url> [--inspector-token …]`) |
 | `npm run deploy:web` | Publish `apps/web` to GitHub Pages (prototype hosting) |
 | `npm run db:up` / `db:down` | Start / stop the local Postgres + pgvector container |
 | `npm run db:down:clean` | Stop the container **and delete its data volume** |
@@ -178,8 +180,19 @@ unset the API builds no debug payload at all and every response is a visitor's r
 
 The comparison switch costs a second `gpt-4o` call on the turns you use it for.
 
+## Deployment (Feature 24 — private preview)
+
+One Render service serves everything from one origin: the student app at `/`, the researcher
+admin tool at `/admin`, and the API. `POST /chat` is on there behind a per-IP rate limit and a
+daily spend ceiling, and the whole origin is `noindex` — it is an unadvertised preview for one
+reviewer, not a public launch. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has the steps, the
+secrets to paste, and how to switch chat back off in a hurry.
+
+Build the hosted bundle with `npm run build:web:hosted`, not `build:web` — the plain one
+targets the GitHub Pages path and produces a page whose assets 404.
+
 ## GitHub Pages (prototype)
 
-The existing prototype stays publishable from `apps/web` via `npm run deploy:web`
-(uses hash routing, so no base path config is needed). See
-[apps/web/README.md](apps/web/README.md) for details.
+The original prototype stays publishable from `apps/web` via `npm run deploy:web` (uses hash
+routing, so no base path config is needed). See [apps/web/README.md](apps/web/README.md) for
+details.

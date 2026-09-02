@@ -15,6 +15,7 @@
     "dev:api": "npm run dev --workspace @innersun/api",
     "build:shared": "npm run build --workspace @innersun/shared",
     "build:web": "npm run build --workspace @innersun/web",
+    "build:web:hosted": "npm run build:hosted --workspace @innersun/web",
     "build:api": "npm run build:shared && npm run build --workspace @innersun/api",
     "deploy:web": "npm run deploy --workspace @innersun/web",
     "db:up": "npm run up --workspace @innersun/db",
@@ -32,7 +33,8 @@
     "admin:create": "npm run admin:create --workspace @innersun/api --",
     "retrieval:calibrate": "npm run retrieval:calibrate --workspace @innersun/api --",
     "safety:check": "npm run safety:check --workspace @innersun/api --",
-    "booking:check": "npm run booking:check --workspace @innersun/api --"
+    "booking:check": "npm run booking:check --workspace @innersun/api --",
+    "preview:smoke": "npm run preview:smoke --workspace @innersun/api --"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

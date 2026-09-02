@@ -5,6 +5,12 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <link rel="icon" type="image/png" href="%PUBLIC_URL%/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Private preview (Feature 24). The site is online for one reviewer, not for search.
+      Paired with public/robots.txt and the X-Robots-Tag header the API sends; all three
+      come off together at the public launch (Feature 21).
+    -->
+    <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#000000" />
     <meta
       name="description"

@@ -8,9 +8,15 @@
  * what it was told to do, or how to authenticate to OpenAI.
  */
 
-// Absolute rather than a relative path proxied by the dev server, so local
-// development exercises the same cross-origin request that a deployed build
-// will (the API allows WEB_ORIGIN via CORS). Feature 21 sets this for real.
+// Absolute rather than a relative path proxied by the dev server, so local development
+// exercises a real cross-origin request (the API allows WEB_ORIGIN via CORS) instead of one
+// the dev server quietly rewrites.
+//
+// The DEPLOYED build sets this to "/" — since Feature 24 the API serves this app from its own
+// origin, so the trailing-slash strip below leaves an empty base and every call becomes a
+// same-origin relative one. That is why "/" is the value `build:web:hosted` passes rather than
+// the deployed hostname: nothing in the bundle needs to know its own URL.
+//
 // Exported so everything that talks to the API agrees on where it is — see
 // PublicConfigFetcher, which asks the same service for the booking link.
 export const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');

@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json && npm run copy:prompts && npm run copy:admin",
+    "build": "tsc -p tsconfig.json && npm run copy:prompts && npm run copy:admin && npm run copy:web",
     "copy:prompts": "mkdir -p dist/prompts && cp src/prompts/*.md dist/prompts/",
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
@@ -15,7 +15,9 @@
     "retrieval:calibrate": "tsx src/scripts/calibrate-retrieval.ts",
     "safety:check": "tsx src/scripts/check-safety.ts",
     "booking:check": "tsx src/scripts/check-booking.ts",
-    "copy:admin": "rm -rf dist/public && if [ -d ../../apps/admin/dist ]; then mkdir -p dist/public && cp -R ../../apps/admin/dist/. dist/public/; else echo 'note: admin bundle not built (npm run build:admin)'; fi"
+    "preview:smoke": "tsx src/scripts/smoke-preview.ts",
+    "copy:admin": "rm -rf dist/public && if [ -d ../../apps/admin/dist ]; then mkdir -p dist/public && cp -R ../../apps/admin/dist/. dist/public/; else echo 'note: admin bundle not built (npm run build:admin)'; fi",
+    "copy:web": "rm -rf dist/web && if [ -d ../../apps/web/build ]; then mkdir -p dist/web && cp -R ../../apps/web/build/. dist/web/; else echo 'note: student app bundle not built (npm run build:web:hosted)'; fi"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
