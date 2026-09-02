@@ -22,6 +22,7 @@ import {
   type Conversation,
 } from "../conversations.js";
 import { assessBookingReadiness, type BookingDecision } from "../booking.js";
+import { assertChatBudget, chatRateLimit, recordChatSpend } from "../chat-limits.js";
 import { crisisFallbackReply, crisisResources } from "../crisis-resources.js";
 import { AppError } from "../errors.js";
 import { createChatCompletion } from "../openai.js";
@@ -298,7 +299,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: ChatRequest; Reply: ChatResponse }>(
     "/chat",
-    { schema: { body: chatBodySchema, response: { 200: chatResponseSchema } } },
+    {
+      schema: { body: chatBodySchema, response: { 200: chatResponseSchema } },
+      // Feature 24 AC 1. Two bounds, checked before a single token is spent: a per-IP rate
+      // limit, and the instance's daily spend ceiling. See chat-limits.ts for why both.
+      // Until this landed the hosted answer to "who may call this?" was "nobody"
+      // (ENABLE_CHAT_ROUTES=false), which is what these two replace.
+      config: { rateLimit: chatRateLimit },
+      preHandler: async () => {
+        assertChatBudget();
+      },
+    },
     async (request): Promise<ChatResponse> => {
       const { message, conversationId, locale: requestedLocale } = request.body;
       const ledger = new TurnLedger();
@@ -514,7 +525,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         // this product must not answer with "something went wrong, please try again" is the
         // moment someone has just disclosed that they are in danger. So the turn degrades to
         // fixed text plus the resource list, which is the half that actually had to arrive.
-        if (!screen.crisis) throw err;
+        // Whatever this turn already spent counts, even though it produced nothing: the
+        // cheap calls were billed, and a ceiling that forgave failed turns would be a
+        // ceiling anyone could walk straight past by making the reply call fail.
+        if (!screen.crisis) {
+          recordChatSpend(ledger.totalCostUsd());
+          throw err;
+        }
         request.log.error(
           { err, conversationId: conversation.id },
           "crisis reply failed upstream — falling back to the fixed crisis message",
@@ -529,6 +546,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (unguided) ledger.record("reply-no-guidance", unguided.model, unguided.usage);
 
       const turn = ledger.toRecord();
+      // Against today's ceiling (Feature 24 AC 1). Recorded once the turn's calls are all
+      // made and priced, so what the limit counts is what the log line and the inspector
+      // report — one figure, not three that drift.
+      recordChatSpend(turn.costUsd);
 
       // Structured, message-content-free: this is a mental-health product, so
       // the log records the shape of the exchange, never what was said. Per-call token

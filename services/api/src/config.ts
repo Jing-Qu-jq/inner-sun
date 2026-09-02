@@ -77,12 +77,16 @@ export const config = {
   /**
    * Whether to serve POST /chat (Feature 17).
    *
-   * On by default, because that endpoint is the product. It is switched OFF on the hosted
-   * admin instance, where the only job is letting researchers author Care Patterns: an
+   * On by default, because that endpoint is the product. Feature 17 switched it OFF on the
+   * hosted instance, whose only job then was letting researchers author Care Patterns: an
    * open, unauthenticated, token-spending chat endpoint on the public internet is the one
-   * thing that deployment must not create. With it off, the hosted service cannot run up
-   * an OpenAI bill — its sole upstream call is one embedding when someone clicks Save.
-   * Feature 21 turns it back on behind the abuse protection Feature 20 adds.
+   * thing that deployment must not create. With it off, that service could not run up an
+   * OpenAI bill — its sole upstream call was one embedding when someone clicks Save.
+   *
+   * **Feature 24 turned it back on** for the private preview, and what replaced this switch
+   * as the cost control is the pair of limits in chat-limits.ts: a per-IP rate limit and a
+   * daily spend ceiling for the whole instance. Setting this to false remains the fastest way
+   * to stop chat entirely — see "Switching chat off in a hurry" in docs/DEPLOYMENT.md.
    */
   enableChatRoutes: optional("ENABLE_CHAT_ROUTES", "true").toLowerCase() !== "false",
 
@@ -197,6 +201,45 @@ export const config = {
      * a real disclosure is rarely under thirty.
      */
     minTurnChars: Number(optional("BOOKING_MIN_TURN_CHARS", "30")),
+  },
+
+  /**
+   * Abuse and cost protection on POST /chat (Feature 24 AC 1 — the slice of Feature 20 AC 1
+   * that had to land before the endpoint could be switched on for anyone outside localhost).
+   *
+   * Two limits, because they bound two different things and neither one is sufficient alone:
+   *
+   *   • `maxPerWindow` per client IP stops one browser (or one script) from farming the
+   *     endpoint. It is the limit a real person could ever notice, so it is sized for the
+   *     worst legitimate case rather than the average one — a demo, where the inspector's
+   *     comparison switch is on and every turn is answered twice.
+   *   • `dailyBudgetUsd` bounds what the whole instance can spend in a day, across every
+   *     client. Per-IP limiting says nothing about a hundred IPs, and "unadvertised" is not
+   *     a cost control; this is the number that makes the exposure finite.
+   */
+  chatLimits: {
+    /** Requests one IP may make to POST /chat per window. */
+    maxPerWindow: Number(optional("CHAT_RATE_LIMIT_MAX", "40")),
+    /**
+     * The window, in milliseconds. Milliseconds rather than @fastify/rate-limit's "10 minutes"
+     * string so the value is one kind of thing everywhere: validated as a number at startup,
+     * and printed as one in the boot log.
+     */
+    windowMs: Number(optional("CHAT_RATE_LIMIT_WINDOW_MS", String(10 * 60 * 1000))),
+    /**
+     * Ceiling on estimated OpenAI spend through POST /chat, per UTC day, for this process.
+     *
+     * Estimated from the same list prices the inspector and the log quote (usage.ts), so it
+     * tracks the invoice without being it. Counted IN MEMORY and reset by a restart, which is
+     * a real limitation and an acceptable one at one free instance: a restart is not something
+     * an attacker can cause, and the alternative — a counter in Postgres on the hot path of
+     * every turn — buys accuracy this does not need.
+     *
+     * Once it is reached, POST /chat answers 503 until the next UTC day. There is deliberately
+     * no way to switch it off: an instance with chat enabled and no ceiling is precisely the
+     * thing ENABLE_CHAT_ROUTES existed to prevent.
+     */
+    dailyBudgetUsd: Number(optional("CHAT_DAILY_BUDGET_USD", "5")),
   },
 
   /**
@@ -340,6 +383,25 @@ export function validateConfig(): string[] {
           "Leave it unset to switch the booking nudge off entirely.",
       );
     }
+  }
+
+  // The Feature 24 chat limits. Each fails in the expensive direction when it is wrong: a
+  // zero or negative window makes @fastify/rate-limit's bookkeeping meaningless, and a
+  // non-positive budget would either block every turn or — read as "no limit" — put an
+  // unbounded OpenAI bill behind an unauthenticated endpoint.
+  const { maxPerWindow, windowMs, dailyBudgetUsd } = config.chatLimits;
+  if (!Number.isInteger(maxPerWindow) || maxPerWindow <= 0) {
+    problems.push(`CHAT_RATE_LIMIT_MAX must be a positive whole number: ${process.env.CHAT_RATE_LIMIT_MAX}`);
+  }
+  if (!Number.isFinite(windowMs) || windowMs <= 0) {
+    problems.push(`CHAT_RATE_LIMIT_WINDOW_MS must be a positive number of milliseconds: ${process.env.CHAT_RATE_LIMIT_WINDOW_MS}`);
+  }
+  if (!Number.isFinite(dailyBudgetUsd) || dailyBudgetUsd <= 0) {
+    problems.push(
+      `CHAT_DAILY_BUDGET_USD must be a positive number of US dollars: ${process.env.CHAT_DAILY_BUDGET_USD}. ` +
+        "There is no value that switches the ceiling off — an unauthenticated chat endpoint with no " +
+        "spend limit is what ENABLE_CHAT_ROUTES=false exists to prevent.",
+    );
   }
 
   // A floor outside 0-1 is not a stricter setting, it is a broken one: above 1 nothing can

@@ -408,7 +408,7 @@ At ~$0.05 per conversation, unit cost is what matters as we scale. Levers, in or
 | **Model tiering** | ✅ v1 | `gpt-4o-mini` for classify / safety / summarize / normalize; `gpt-4o` only for the counseling reply. **Biggest lever.** Enforced at startup: the API refuses to boot with both pointed at the same model. |
 | **History summarization** | ✅ v1 | Older messages are folded into a running summary instead of being resent, so the prompt stops growing while the conversation stays whole. |
 | **Prompt caching** | ✅ v1 | OpenAI bills a prompt prefix it has seen before at half price. Nothing to switch on — what it needs is **ordering**, below. |
-| **Token caps + rate limiting** | ✅ v1 | Every call carries a `max_tokens`. Abuse protection so free anonymous usage can't be farmed is Feature 20. |
+| **Token caps + rate limiting** | ✅ v1 | Every call carries a `max_tokens`. Since Feature 24, `POST /chat` also carries two bounds that let it be served on a public URL at all: a per-IP rate limit, and a **daily spend ceiling for the whole instance** — because a per-IP limit says nothing about a hundred IPs, and an unadvertised URL is not a cost control. The rest of the abuse protection stays in Feature 20. |
 | **Reply length** | ✅ v1 | The prompt matches reply length to the moment instead of defaulting to long. Measured: completion tokens fell from a 122–219 band to **9–71** on the same messages. |
 | **Semantic cache** | 🔵 Future | Skip the model call for repeated *FAQ* questions. Deferred: needs a vector-match service, and it barely helps counseling (real venting is personal, not repeated). **Never** cache a personalized emotional reply. |
 
@@ -614,4 +614,5 @@ Deferred until we have users, data, revenue, and governance in place.
 | Models | OpenAI: gpt-4o (reply), gpt-4o-mini (classify/safety/summarize), text-embedding-3-small | Per choice; tiered for cost |
 | Storage | Postgres + pgvector — Docker locally, **Supabase** hosted | One store for relational + vectors; cheap, simple; plain-SQL migrations port between the two |
 | Authoring | Researcher admin tool served by the API, same origin | Non-engineers write the knowledge base; saving re-embeds automatically |
+| Hosting | One **Render** service — student app at `/`, admin tool at `/admin`, API alongside; **Supabase** for the database | One origin, so no CORS and no second deployment. Live since Feature 24 as an unadvertised `noindex` preview; a custom domain is Feature 21's job |
 | Funnel | Scheduling + payments (e.g., Stripe) | Human bookings = revenue |

@@ -8,8 +8,9 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import type { ApiError, HealthResponse, PublicConfig } from "@innersun/shared";
 import { config, isProduction, validateConfig } from "./config.js";
+import { logChatLimits } from "./chat-limits.js";
 import { isDbReachable, pool } from "./db.js";
-import { isAppError } from "./errors.js";
+import { AppError, isAppError } from "./errors.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminFaqRoutes } from "./routes/admin-faq.js";
 import { registerChatRoutes } from "./routes/chat.js";
@@ -28,6 +29,23 @@ const here = dirname(fileURLToPath(import.meta.url));
  */
 function findAdminBundle(): string | undefined {
   const candidates = [join(here, "public"), join(here, "..", "..", "..", "apps", "admin", "dist")];
+  return candidates.find((path) => existsSync(join(path, "index.html")));
+}
+
+/**
+ * Where the built student app lives (Feature 24 AC 2).
+ *
+ * Same arrangement as the admin bundle above, and for the same reason: served from the API's
+ * own origin, so there is one URL and CORS stops being a consideration. Built with
+ * `npm run build:web:hosted`, which is the ordinary CRA build with PUBLIC_URL and
+ * REACT_APP_API_BASE_URL pointed at the root — the plain `build:web` still targets the
+ * GitHub Pages path and is left alone.
+ *
+ * Returns undefined when neither exists, which is the normal state on the admin-only
+ * deployment and during local API work.
+ */
+function findWebBundle(): string | undefined {
+  const candidates = [join(here, "web"), join(here, "..", "..", "..", "apps", "web", "build")];
   return candidates.find((path) => existsSync(join(path, "index.html")));
 }
 
@@ -87,7 +105,40 @@ export function buildServer() {
   app.register(cookie);
   // Opt-in rather than global: only the credential-checking routes are limited, so a
   // researcher saving twenty patterns in a burst is never throttled for it.
-  app.register(rateLimit, { global: false });
+  app.register(rateLimit, {
+    global: false,
+    /**
+     * Answer a throttled request in the same `{error:{code,message}}` envelope every other
+     * failure uses. @fastify/rate-limit throws whatever this returns, so returning an
+     * AppError routes it through the handler at the bottom of this file — which matters
+     * because both clients read `error.code` and would otherwise see a 429 body they cannot
+     * parse, and fall back to "something went wrong" on the one error that has a clear
+     * explanation and a clear remedy.
+     */
+    errorResponseBuilder: (_request, context) =>
+      // 403 is the plugin's own status for a banned client; nothing here configures `ban`,
+      // so this is a 429 in practice. Taken from the context rather than hardcoded because
+      // the plugin's published type omits its `statusCode` field, and inventing a status
+      // that disagreed with the headers it already sent would be worse than deriving one.
+      new AppError(context.ban ? 403 : 429, "rate_limited", `Too many requests. Try again in ${context.after}.`),
+  });
+
+  /**
+   * Keep the whole origin out of search results (Feature 24 AC 4).
+   *
+   * "Private preview" here means unadvertised, not authenticated — there is no login on the
+   * student app and there does not need to be one for an audience of one reviewer. What it
+   * does need is to not turn up in a search for the practice's name while it is still a
+   * preview. `apps/web/public/robots.txt` asks crawlers not to fetch; this header covers
+   * anything they fetch anyway, including the admin bundle and any URL someone links to
+   * directly, since a robots.txt disallow does not by itself prevent indexing.
+   *
+   * Feature 21 removes both, deliberately and together: that is most of what "public launch"
+   * means.
+   */
+  app.addHook("onSend", async (_request, reply) => {
+    reply.header("X-Robots-Tag", "noindex, nofollow");
+  });
 
   /**
    * Public, unauthenticated configuration the browser needs before it has anything to send
@@ -145,6 +196,10 @@ export function buildServer() {
       // layer's: with BOOKING_URL unset the service builds trust exactly as designed and
       // then never once asks the question the business depends on.
       logBookingReadiness(app.log);
+      // And the Feature 24 limits, which are what allow this route to be served on a public
+      // URL at all. They fail in both directions without a symptom: too loose and the
+      // protection is decorative, too tight and a reviewer's demo stops mid-conversation.
+      logChatLimits(app.log);
     });
   } else {
     app.log.warn("POST /chat is disabled (ENABLE_CHAT_ROUTES=false) — admin-only instance");
@@ -160,6 +215,29 @@ export function buildServer() {
     app.register(fastifyStatic, { root: adminBundle, prefix: "/admin", redirect: true });
   } else {
     app.log.warn("Admin UI bundle not found — run `npm run build:admin`. The /admin/api routes still work.");
+  }
+
+  /**
+   * The student app at the origin root (Feature 24 AC 2).
+   *
+   * Registered AFTER the admin bundle and after every declared route, because this one owns
+   * the `/*` wildcard. Fastify's router prefers a literal segment to a wildcard, so
+   * `/health`, `/chat`, `/public-config`, `/inspect` and everything under `/admin` still win;
+   * this catches what is left, which is the bundle's own assets.
+   *
+   * `decorateReply: false` when the admin bundle is already registered: @fastify/static adds
+   * `reply.sendFile`, and adding it twice is an error rather than a no-op.
+   *
+   * No SPA history fallback is needed. The app routes with a HashRouter, so every URL a
+   * student can reach is `/` with a fragment the server never sees.
+   */
+  const webBundle = findWebBundle();
+  if (webBundle) {
+    app.register(fastifyStatic, { root: webBundle, prefix: "/", decorateReply: !adminBundle });
+  } else if (config.enableChatRoutes) {
+    app.log.warn(
+      "Student app bundle not found — run `npm run build:web:hosted`. The API still serves POST /chat.",
+    );
   }
 
   // Close the DB pool when the server shuts down.

@@ -1,0 +1,14 @@
+# Feature 24 — private preview.
+#
+# The site is online so one reviewer can use it and screenshot it, not so that it can be
+# found. There is no login and there does not need to be one; what "private" means here is
+# unadvertised and unindexed.
+#
+# Disallow only asks a well-behaved crawler not to fetch, which is not the same as not
+# indexing — a URL linked from elsewhere can still be listed without ever being crawled.
+# The `noindex` meta tag in index.html and the X-Robots-Tag header the API sends on every
+# response are what actually cover that.
+#
+# Feature 21 (public launch) removes all three, together.
+User-agent: *
+Disallow: /

@@ -1,17 +1,26 @@
 # Deployment
 
-**Live:** <https://innersun-admin.onrender.com/admin> — first deployed 2026-08-16.
+**Live:** <https://innersun-admin.onrender.com> — first deployed 2026-08-16 (admin tool),
+extended 2026-09-02 to the student app (Feature 24).
 
-This stands up **one service** — the Fastify API, which also serves the admin UI at
-`/admin` from its own origin — against a **Supabase** Postgres database.
+This stands up **one service** — the Fastify API, which also serves the admin UI at `/admin`
+and the student chat app at `/`, both from its own origin — against a **Supabase** Postgres
+database.
 
-> **Scope.** Today this deployment exists for the researcher admin tool, and the
-> student-facing chat app is not part of it. Feature 21 **extends this same deployment**
-> rather than adding a second one: same Render service, same database, with
-> `ENABLE_CHAT_ROUTES` turned back on and the web app served from the same origin the admin
-> UI already uses. That is why this file is `DEPLOYMENT.md` and not something admin-specific.
+> **Scope.** This deployment began as the researcher admin tool with `POST /chat` switched
+> off. **Feature 24 turned chat on for a private preview**: one known reviewer, on an
+> unadvertised and `noindex` URL, behind a rate limit and a daily spend ceiling. It is the
+> same Render service and the same database — extended, not replaced, which is why this file
+> is `DEPLOYMENT.md` and not something admin-specific.
+>
+> **It is still not a public launch.** No privacy or terms pages, no consent notice, no
+> custom domain, and the Login modal is still a prop that discards what it collects. Those
+> belong to Feature 21, which is about opening the door to *strangers* rather than about
+> deploying. Section [Going from private preview to public](#going-from-private-preview-to-public)
+> lists what has to change.
 
-Everything the researcher needs lives behind a login at `https://<your-service>/admin`.
+Everything the researcher needs lives behind a login at `https://<your-service>/admin`; the
+student app is the root of the same URL.
 
 > **Steps marked 👤 only you can do.** They involve creating accounts and entering secrets,
 > which is deliberately not something to hand to an assistant or paste into a chat log.
@@ -21,16 +30,33 @@ Everything the researcher needs lives behind a login at `https://<your-service>/
 ## What you are building
 
 ```
-Researcher's browser ──▶ Render (API + admin UI) ──▶ Supabase Postgres
-                              │                        care_patterns
-                              │                        canned_responses
-                              └──▶ OpenAI (embeddings only)
+Student's browser    ──▶ ┐
+                         ├─▶ Render (API + admin UI + student app) ──▶ Supabase Postgres
+Researcher's browser ──▶ ┘                    │                          care_patterns
+                                              │                          conversations
+                                              └──▶ OpenAI                messages
+                                                   embeddings + replies   canned_responses
 ```
 
-`POST /chat` is **switched off** on this service (`ENABLE_CHAT_ROUTES=false`). An open,
-unauthenticated, token-spending chat endpoint on the public internet is the one thing this
-deployment must not create. With it off, the only upstream call this service can make is a
-single embedding when someone presses Save, so it cannot run up an OpenAI bill.
+One origin serves everything: `/` is the student app, `/admin` the researcher's tool,
+`/health`, `/chat`, `/public-config` and `/inspect` the API. Nothing is cross-origin, so CORS
+is not a consideration for either client.
+
+**`POST /chat` is on, and what makes that safe is not the URL being unadvertised.** Until
+Feature 24 this service ran with `ENABLE_CHAT_ROUTES=false`, because an open,
+unauthenticated, token-spending chat endpoint on the public internet is the one thing a
+deployment must not create. Two bounds replaced that switch, both declared in
+[`render.yaml`](../render.yaml) so they are reviewable in the repository:
+
+| Bound | Default | What it stops |
+| --- | --- | --- |
+| `CHAT_RATE_LIMIT_MAX` per `CHAT_RATE_LIMIT_WINDOW_MS`, per client IP | 40 per 10 min | One client looping the endpoint. Sized for the heaviest legitimate use — a live demo with the inspector's comparison switch on — because it is the only limit a real person could meet. |
+| `CHAT_DAILY_BUDGET_USD` for the whole instance, per UTC day | $5 | Everything else. A per-IP limit says nothing about a hundred IPs; this is the bound that makes the worst case a number. ~120 conversations at the measured $0.034–0.042 each. |
+
+The ceiling is counted **in memory**, so a restart resets it and a busy day could in
+principle cost twice the figure. That is the accepted trade at one free instance — see
+`services/api/src/chat-limits.ts`. When it is reached, `POST /chat` answers 503 and the chat
+page says InnerSun is busy; nothing else on the service is affected.
 
 ---
 
@@ -83,8 +109,12 @@ DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
   npm run db:migrate
 ```
 
-This applies `0001` through `0004` and records them in `schema_migrations`, so re-running
-is a no-op.
+This applies every migration in `db/migrations` — `0001` through `0007` today — and records
+each in `schema_migrations`, so re-running is a no-op. **Run it again after any deploy that
+adds one**: Render builds and starts the code, it does not touch the database, and the
+symptom of a missed migration is a runtime error on the one feature that needed the new
+column rather than a failed deploy. Feature 24 added none, so an instance already on `0007`
+needs nothing here.
 
 Then load the twelve starter Care Patterns. This one needs an explicit flag, because
 seeding overwrites the starter patterns by fixed UUID and the scripts refuse to touch a
@@ -129,6 +159,32 @@ Render will prompt for the values marked `sync: false`:
 | `DATABASE_URL` | The Supabase session-pooler URI from step 1 |
 | `OPENAI_API_KEY` | Your OpenAI key |
 | `DATABASE_SSL_CA` | The **contents** of `prod-ca-2021.crt` — open it in a text editor and paste the whole `-----BEGIN CERTIFICATE-----` block |
+| `INSPECTOR_TOKEN` | A long random string — `openssl rand -base64 24` |
+| `BOOKING_URL` | The practice's scheduling link — **leave blank for now, there isn't one yet** |
+
+**Both were added by Feature 24**, so an instance created before then will not have them; add
+them under *Environment* and redeploy.
+
+- **`BOOKING_URL` is deliberately unset on the preview** (decided 2026-09-02 — the practice has
+  no scheduling link yet). Unset switches the booking nudge off entirely, which is a supported
+  state rather than a degradation: inviting a student to book a counselor and then handing
+  them nowhere to go is worse than not asking. The consequence is that **no conversation
+  invites anyone to book**, and the home page's "Talk to a human" button scrolls to the team
+  section instead of opening a scheduler — no dead link, but no funnel either. Say so to the
+  reviewer rather than letting her wonder where it went. The startup log reports `booking
+  nudge ready configured: false`. When a link exists, paste it here and redeploy; nothing else
+  changes, and a malformed value is refused at startup rather than shipped.
+- **`INSPECTOR_TOKEN` unset means the retrieval inspector does not exist**: no debug payload
+  is built and a response is byte-identical to an ordinary visitor's. That is the right
+  default for a public service and the wrong one here, because the inspector is what makes
+  the differentiator visible in a screenshot — a live chat hides the fact that a reply is
+  grounded in researcher-authored guidance.
+
+  **Treat it as rotatable.** It grants read access to the Care Pattern library's titles,
+  similarity scores and guidance text — the product's core asset — and nothing else: it
+  cannot create, edit, publish or retire a pattern, and it is *not* the admin session, which
+  can. Changing the value here and redeploying is the entire revocation procedure. Hand it
+  over the same way you hand over a password, and expect to change it after a demo.
 
 `DATABASE_SSL_CA` accepts either a file path or the certificate text itself. On Render,
 paste the text: a hosting platform takes environment variables easily and files awkwardly.
@@ -143,7 +199,7 @@ The free plan spins down when idle, so the first request after a quiet spell tak
 
 ---
 
-## 4. Create her account
+## 4. Create the researcher's account
 
 ```bash
 DATABASE_SSL_CA="$HOME/Downloads/prod-ca-2021.crt" \
@@ -157,29 +213,55 @@ password on first sign-in, and the temporary one stops working at that point.
 
 Give yourself an account too, with `--role admin`.
 
+**Students need no account at all** — the chat app is anonymous, which is the product's
+promise and the reason the private preview needs no login to be private. Accounts here are
+only for the researcher admin tool.
+
 ---
 
 ## 5. Smoke test
 
+One script walks the whole preview the way the reviewer will — the page loads, a message
+gets a reply, the reply is grounded in a Care Pattern, a crisis message is screened, a
+student who asks for a human is handed a link, and both languages work:
+
+```bash
+npm run preview:smoke -- --base https://innersun-admin.onrender.com --inspector-token "$INSPECTOR_TOKEN"
+```
+
+It talks to the deployed instance over HTTP and nothing else — no database connection, no
+OpenAI key, no access to the server's environment. That is the point: it is the only check
+in this repository that can catch the things the code cannot see, like a bundle built with
+the wrong `PUBLIC_URL` or a secret nobody pasted.
+
+**It spends real money on that instance** — about five chat turns, roughly $0.20, counted
+against the daily ceiling. Pass `--skip-chat` for the free half (health, the served bundle,
+`noindex`, the admin tool) when all you want to know is whether a deploy came up. Without
+`--inspector-token` it runs everything except the two inspector checks and says so, and it
+skips the two booking checks on an instance with no `BOOKING_URL` rather than failing them.
+
+A free instance takes ~50 seconds to wake, so the first request is slow rather than broken;
+the script waits 90 seconds before giving up.
+
+The individual pieces, if you want them by hand:
+
 ```bash
 BASE=https://innersun-admin.onrender.com
 
-curl -s $BASE/health                                   # {"status":"ok", … "db":"up"}
-curl -s -o /dev/null -w "%{http_code}\n" $BASE/admin/   # 200
+curl -s $BASE/health                                     # {"status":"ok", … "db":"up"}
+curl -s -o /dev/null -w "%{http_code}\n" $BASE/            # 200 — the student app
+curl -s -o /dev/null -w "%{http_code}\n" $BASE/admin/      # 200 — the researcher's tool
 curl -s -o /dev/null -w "%{http_code}\n" $BASE/admin/api/care-patterns   # 401
-curl -s -o /dev/null -w "%{http_code}\n" -X POST $BASE/chat \
-  -H 'Content-Type: application/json' -d '{"message":"hi"}'              # 404
+curl -sI $BASE/ | grep -i x-robots-tag                   # noindex, nofollow
+curl -s $BASE/public-config                              # {} until BOOKING_URL is set
 ```
 
-**The 404 is the one that matters.** It confirms the chat endpoint is not exposed on this
-instance, which is what stops it being farmed for OpenAI credit.
+Then sign in to `/admin`, create a Care Pattern, press Save, then Publish.
 
-Then sign in, create a Care Pattern, press Save, then Publish.
-
-Results from the first deploy (2026-08-16): `db: "up"`, `/admin/` 200, `/admin/api/*` 401,
-`POST /chat` 404, `http://` redirects to `https://`, and the login rate limiter reports a
-per-client budget — confirming `trustProxy` is working, without which every visitor would
-share one global allowance.
+Results from the first deploy (2026-08-16, admin only): `db: "up"`, `/admin/` 200,
+`/admin/api/*` 401, `POST /chat` 404 — confirming chat was not exposed — `http://` redirects
+to `https://`, and the login rate limiter reports a per-client budget, which is `trustProxy`
+working; without it every visitor would share one global allowance.
 
 ---
 
@@ -209,6 +291,46 @@ That copies patterns **down** into your local database. Never point `DATABASE_UR
 Supabase to browse content — `db:reset` reads that variable and would drop the schema. The
 scripts refuse a non-local host for exactly this reason, but the habit matters more than
 the guard.
+
+---
+
+## Switching chat off in a hurry
+
+If the link leaks, the bill moves, or anything about the preview needs to stop:
+
+1. Set `ENABLE_CHAT_ROUTES=false` in Render's dashboard and redeploy. `POST /chat` then
+   answers 404 exactly as an unknown route does, the student app still loads but can no
+   longer send anything, and the admin tool is untouched. This is the state the service ran
+   in from August until Feature 24, so it is a known-good configuration rather than an
+   improvisation.
+2. Lower `CHAT_DAILY_BUDGET_USD` instead if the problem is cost rather than exposure — the
+   endpoint keeps working until the day's ceiling is hit, then answers 503.
+3. Change `INSPECTOR_TOKEN` if what leaked was the demo credential. Nothing else needs to
+   change; it grants read access to Care Pattern content and no ability to alter it.
+
+A monthly budget cap in the OpenAI dashboard is worth having regardless — it is the only
+limit that survives a mistake in this repository.
+
+---
+
+## Going from private preview to public
+
+Feature 24 deliberately shipped a preview, not a launch. What is knowingly missing, and
+belongs to **Feature 21**:
+
+- **No privacy policy, terms, or consent notice**, while conversations — crisis disclosures
+  included — are stored in Postgres. Acceptable for one reviewer who is a co-owner and knows
+  it; binding the moment a stranger can reach the site. See ARCHITECTURE.md §10.
+- **The crisis resource list has not been reviewed by a researcher**
+  (`services/api/src/crisis-resources.ts`). Scheduled immediately, and it must not still be
+  unreviewed when strangers arrive.
+- **`noindex` is on** — the meta tag in `apps/web/public/index.html`, `robots.txt`, and the
+  `X-Robots-Tag` header the API sends on every response. All three come off together.
+- **Cosmetic defects ship on purpose**: the Login modal collects a password and discards it,
+  the team page is placeholder profiles, `/privacy` and `/terms` are dead links.
+- **No custom domain.** The URL still says `innersun-admin`, which is historical — Render
+  keys a blueprint's services by name, so renaming the service would destroy it and create a
+  new one at a new URL.
 
 ---
 

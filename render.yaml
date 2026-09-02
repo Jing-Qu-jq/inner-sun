@@ -1,9 +1,19 @@
-# Render blueprint for the InnerSun researcher admin tool (Feature 17).
+# Render blueprint for InnerSun (Features 17 and 24).
 #
-# This deploys ONE service: the Fastify API, which also serves the built admin UI at
-# /admin from its own origin. The student-facing chat app is NOT deployed here — that is
-# Feature 21 — and `ENABLE_CHAT_ROUTES: false` below is what keeps this instance from
-# exposing an open, unauthenticated, token-spending chat endpoint on the public internet.
+# This deploys ONE service: the Fastify API, which also serves the built admin UI at /admin
+# and — since Feature 24 — the student-facing chat app at the origin root, both from its own
+# origin. One URL for everything, so CORS is not a consideration for either.
+#
+# Feature 17 stood this up as an admin-only instance with `ENABLE_CHAT_ROUTES: false`, since
+# an open, unauthenticated, token-spending chat endpoint on the public internet is the one
+# thing a deployment must not create. Feature 24 turns it on for a PRIVATE PREVIEW — one
+# reviewer, unadvertised and unindexed — and what replaces that switch is the pair of limits
+# below: a per-IP rate limit and a daily spend ceiling for the whole instance.
+#
+# The service is still named `innersun-admin` because Render keys a blueprint's services by
+# name: renaming it here would destroy this service and create a new one at a new URL,
+# breaking the researcher's bookmark and every link already handed out. The name is now
+# historical. A real domain is Feature 21's job.
 #
 # The database is Supabase, not a Render Postgres: see docs/DEPLOYMENT.md for why, and for
 # the steps only a human can do (creating the accounts, pasting the secrets).
@@ -17,8 +27,15 @@ services:
     # roughly 50 seconds. Acceptable for a tool two or three people open a few times a day.
     region: oregon
 
-    # The whole monorepo is built: shared types, then the admin bundle, then the API —
-    # whose build step copies that bundle into dist/public to be served.
+    # The whole monorepo is built: shared types, then the admin bundle, then the student
+    # app, then the API — whose build step copies both bundles into dist/ to be served
+    # (dist/public for the admin UI, dist/web for the student app).
+    #
+    # `build:web:hosted` rather than `build:web`: the plain one still targets the GitHub
+    # Pages path from `homepage` in apps/web/package.json, and a bundle built that way
+    # serves its HTML perfectly and then asks the browser for /inner-sun/static/... which
+    # 404s into a blank page. The hosted build overrides PUBLIC_URL and points
+    # REACT_APP_API_BASE_URL at this same origin.
     #
     # `--include=dev` is load-bearing. NODE_ENV=production below is wanted at RUNTIME (it
     # drives the secure cookie flag and the logger), but npm also reads it at install time
@@ -26,7 +43,7 @@ services:
     # @vitejs/plugin-react, typescript, the type packages. Without this the build fails
     # part-way through with "Cannot find module 'vite'", which reads like a missing
     # dependency rather than an install that deliberately skipped it.
-    buildCommand: npm ci --include=dev && npm run build:shared && npm run build:admin && npm run build:api
+    buildCommand: npm ci --include=dev && npm run build:shared && npm run build:admin && npm run build:web:hosted && npm run build:api
     startCommand: node services/api/dist/index.js
 
     # Render polls this to decide whether a deploy is healthy. It reports database
@@ -43,10 +60,32 @@ services:
       - key: NODE_ENV
         value: production
 
-      # Admin-only instance. Turning this on would publish a chat endpoint that anyone
-      # could call and that spends OpenAI credit on every request.
+      # ON as of Feature 24 — this is the private preview, and the chat endpoint IS the
+      # product. What makes that safe is not the URL being unadvertised, it is the two
+      # limits below. Do not turn this on anywhere they are absent.
       - key: ENABLE_CHAT_ROUTES
-        value: "false"
+        value: "true"
+
+      # The limits that replace ENABLE_CHAT_ROUTES=false as this instance's cost control
+      # (Feature 24 AC 1). Declared here with values rather than left to code defaults so
+      # what the instance may spend is reviewable in the repository.
+      #
+      # Per client IP: generous on purpose. It exists to stop one client looping the
+      # endpoint, and it is the only limit a real person could meet — so it is sized for a
+      # live demo with the inspector's comparison switch on, not for an average visitor.
+      - key: CHAT_RATE_LIMIT_MAX
+        value: "40"
+      - key: CHAT_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+
+      # For the whole instance, per UTC day, in estimated US dollars. This is the number
+      # that makes the worst case finite: per-IP limiting says nothing about a hundred IPs.
+      # A conversation was measured at $0.034-0.042, so $5 is roughly 120 conversations a
+      # day — far more than one reviewer and a handful of researchers will produce, and a
+      # bill that can be absorbed if the link ever leaks. Counted in memory, so a restart
+      # resets it; see services/api/src/chat-limits.ts for why that is the right trade here.
+      - key: CHAT_DAILY_BUDGET_USD
+        value: "5"
 
       # Supabase connection string, and the OpenAI key used to embed a pattern on save.
       # sync:false means Render prompts for them in the dashboard and they are never
@@ -72,6 +111,26 @@ services:
       # rather than an error.
       - key: OPENAI_MODEL_EMBEDDING
         value: text-embedding-3-small
+
+      # Where a student goes to book a real counselor (Feature 11). DELIBERATELY LEFT UNSET on
+      # the private preview (decided 2026-09-02): the practice has no scheduling link yet, and
+      # unset means the nudge is switched off entirely — which is a supported state, because
+      # inviting someone to book and then handing them nowhere to go is worse than not asking.
+      # The cost of that is real and worth knowing: no conversation invites anyone to book, so
+      # the reviewer does not see the funnel half of the product. Declared here so switching it
+      # on later is pasting a value in the dashboard and redeploying, nothing more. A malformed
+      # value is refused at startup rather than shipped.
+      - key: BOOKING_URL
+        sync: false
+
+      # Unlocks the retrieval inspector (Feature 22) for a demo. UNSET MEANS IT DOES NOT
+      # EXIST: no debug payload is built and a response is byte-identical to an ordinary
+      # visitor's, which is the right default and the one that fails closed. It grants READ
+      # access to the Care Pattern library's titles, scores and guidance text, and nothing
+      # else — it cannot author, publish or retire a pattern. Treat it as rotatable: changing
+      # it here and redeploying is the whole revocation procedure.
+      - key: INSPECTOR_TOKEN
+        sync: false
 
     # PORT is injected by Render; the API reads it and binds 0.0.0.0 on that signal.
     # No SESSION_SECRET: admin sessions are rows in `admin_sessions` keyed by the SHA-256

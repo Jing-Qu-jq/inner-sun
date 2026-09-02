@@ -415,7 +415,7 @@ flowchart LR
       <tr><td><b>模型分级 (model tiering)</b></td><td><span class="pill v1">v1</span></td><td>用 <code>gpt-4o-mini</code> 做分类/安全/摘要/查询归一化；<code>gpt-4o</code> 只用于生成回复。<b>最大的杠杆。</b>若两者被配成同一个模型，API 会拒绝启动。</td></tr>
       <tr><td><b>历史摘要 (summarization)</b></td><td><span class="pill v1">v1</span></td><td>把较早的消息折进一段运行中的摘要，而不是每轮重发：提示词不再变长，对话却仍然完整。</td></tr>
       <tr><td><b>提示词缓存 (prompt caching)</b></td><td><span class="pill v1">v1</span></td><td>OpenAI 对见过的提示词前缀按半价计费。没有开关可开——它要的是<b>顺序</b>，见下。</td></tr>
-      <tr><td><b>Token 上限 + 限流</b></td><td><span class="pill v1">v1</span></td><td>每一次调用都带 <code>max_tokens</code>。防滥用、避免免费额度被刷属于 Feature 20。</td></tr>
+      <tr><td><b>Token 上限 + 限流</b></td><td><span class="pill v1">v1</span></td><td>每一次调用都带 <code>max_tokens</code>。自 Feature 24 起，<code>POST /chat</code> 还有两道边界：按 IP 的限流，以及<b>整个实例每天的花费上限</b>&mdash;&mdash;按 IP 限流管不住一百个 IP，而「网址没有对外公布」并不是成本控制。其余的防滥用措施仍属于 Feature 20。</td></tr>
       <tr><td><b>回复长度 (reply length)</b></td><td><span class="pill v1">v1</span></td><td>提示词要求按场合决定回复长度，而不是默认写长。实测：同样几条消息，completion tokens 从 122–219 降到 <b>9–71</b>。</td></tr>
       <tr><td><b>语义缓存 (semantic cache)</b></td><td><span class="pill future">未来</span></td><td>对重复的<em>常见问题</em>跳过模型调用。暂缓——对咨询帮助有限。<b>绝不</b>缓存个性化的情感回复。</td></tr>
     </tbody>
@@ -581,6 +581,7 @@ flowchart LR
       <tr><td>模型</td><td>OpenAI：gpt-4o（回复）、gpt-4o-mini（分类/安全/摘要）、text-embedding-3-small</td><td>按你的选择；分级控本</td></tr>
       <tr><td>存储</td><td>Postgres + pgvector——本地 Docker，托管用 <b>Supabase</b></td><td>关系型 + 向量一体存储；纯 SQL 迁移可在两者间原样移植</td></tr>
       <tr><td>内容撰写</td><td>由 API 以同源方式托管的研究员后台工具</td><td>非工程人员即可撰写知识库；保存时自动重新生成向量</td></tr>
+      <tr><td>部署</td><td>一个 <b>Render</b> 服务&mdash;&mdash;学生端在 <code>/</code>、研究员后台在 <code>/admin</code>、API 同源；数据库用 <b>Supabase</b></td><td>同源即无需 CORS，也无需第二套部署。自 Feature 24 起以不对外公布、<code>noindex</code> 的预览形态上线；自定义域名属于 Feature 21</td></tr>
       <tr><td>漏斗</td><td>排期 + 支付（如 Stripe）</td><td>真人预约＝收入</td></tr>
     </tbody>
   </table>
